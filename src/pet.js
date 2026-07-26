@@ -3,6 +3,9 @@ const ctx = canvas.getContext("2d");
 const bubble = document.querySelector("#bubble");
 const menu = document.querySelector("#menu");
 const customPet = document.querySelector("#customPet");
+const actionPet = document.querySelector("#actionPet");
+const actionIndicator = document.querySelector("#actionIndicator");
+const stage = document.querySelector("#stage");
 let state;
 let action = "idle";
 let actionUntil = 0;
@@ -12,9 +15,104 @@ let pointer = { x: 260, y: 230 };
 let bubbleTimer;
 let lastTap = 0;
 let customDataUrl = "";
+let usesActionArt = false;
+let dragState;
+let suppressClickUntil = 0;
+let lastLine = "";
+let indicatorTimer;
+let hoverCooldown = 0;
 
 const actionPatterns = window.PetActionPatterns;
 const lines = actionPatterns.ACTION_LINES;
+const builtInActionPets = {
+  momo: {
+    folder: "taotao",
+    poses: {
+      idle: "idle", blink: "idle", pet: "idle", walk: "walk", run: "walk",
+      jump: "celebrate", stretch: "stretch", play: "play", feed: "feed",
+      drink: "feed", study: "study", write: "study", type: "study",
+      sleep: "sleep", nap: "sleep", yawn: "sleep", celebrate: "celebrate",
+      dance: "celebrate", happy: "celebrate", alert: "alert", alarm: "alert",
+      surprised: "alert",
+    },
+  },
+  huahua: {
+    folder: "huahua",
+    poses: {
+      idle: "idle", blink: "idle", pet: "pet", walk: "walk", run: "walk",
+      jump: "celebrate", stretch: "stretch", play: "play", feed: "play",
+      drink: "idle", study: "study", write: "study", type: "study",
+      sleep: "sleep", nap: "sleep", yawn: "sleep", celebrate: "celebrate",
+      dance: "celebrate", happy: "celebrate", alert: "alert", alarm: "alert",
+      surprised: "alert",
+    },
+  },
+};
+let activeActionPet;
+const poseForAction = {
+  idle: "idle",
+  blink: "idle",
+  pet: "idle",
+  walk: "walk",
+  run: "walk",
+  jump: "celebrate",
+  stretch: "stretch",
+  play: "play",
+  feed: "feed",
+  drink: "feed",
+  study: "study",
+  write: "study",
+  type: "study",
+  sleep: "sleep",
+  nap: "sleep",
+  yawn: "sleep",
+  celebrate: "celebrate",
+  dance: "celebrate",
+  happy: "celebrate",
+  alert: "alert",
+  alarm: "alert",
+  surprised: "alert",
+};
+const actionLabels = {
+  idle: "🌿 待机",
+  pet: "🫳 摸摸",
+  walk: "🐾 行走",
+  stretch: "🐈 伸懒腰",
+  play: "🪶 玩耍",
+  feed: "🍪 吃饼干",
+  study: "📖 认真读书",
+  sleep: "🌙 睡觉",
+  celebrate: "🎉 开心庆祝",
+  alert: "🔔 提醒",
+};
+
+function contextualLines(next) {
+  const openTodos = state?.todos?.filter((item) => !item.done) || [];
+  const hour = new Date().getHours();
+  const weather = state?.weather?.current;
+  const context = [];
+  if (next === "idle") {
+    if (hour < 6) context.push("这么晚还没休息吗？我陪你收个尾。");
+    else if (hour < 11) context.push("早上好！先挑一件最重要的事吧。");
+    else if (hour < 14) context.push("午间也要记得吃饭和放松眼睛。");
+    else if (hour >= 22) context.push("今天辛苦啦，别忘了早点休息。");
+    if (openTodos.length) context.push(`待办还有 ${openTodos.length} 件，我们一件件来。`);
+    else context.push("今天的待办很清爽，要不要安排一个小目标？");
+    if (weather) context.push(`${state.weather.location?.name || "这里"}现在${weather.label}，${weather.temperature}°，出门前看好天气哦。`);
+  }
+  if (next === "study" && state?.focus?.duration) {
+    context.push(`这次专注 ${Math.round(state.focus.duration / 60)} 分钟，我会安静陪你。`);
+  }
+  return [...(lines[next] || []), ...context];
+}
+
+function showActionLabel(next) {
+  if (!state?.settings?.showActionLabel) return;
+  clearTimeout(indicatorTimer);
+  actionIndicator.textContent = actionLabels[next] || next;
+  actionIndicator.classList.add("show");
+  indicatorTimer = setTimeout(() => actionIndicator.classList.remove("show"), 1700);
+}
 
 function speak(text, duration = 3200) {
   clearTimeout(bubbleTimer);
@@ -26,11 +124,25 @@ function speak(text, duration = 3200) {
 function setAction(next, duration = actionPatterns.actionDuration(next), silent = false) {
   action = next;
   actionUntil = performance.now() + duration;
+  const pose = poseForAction[next] || "idle";
+  const direction = actionPatterns.directionFromVector(pointer.x - 260, pointer.y - 230).toLowerCase();
+  const facesLeft = ["w", "wsw", "wnw", "sw", "nw"].includes(direction);
+  actionPet.style.setProperty("--direction-scale", facesLeft ? "-1" : "1");
+  customPet.style.setProperty("--direction-scale", facesLeft ? "-1" : "1");
+  if (usesActionArt) {
+    const actionPose = activeActionPet.poses[next] || pose;
+    actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/${actionPose}.webp`;
+    actionPet.className = `action-pet ${next} dir-${direction}`;
+  }
   if (customDataUrl) {
-    const direction = actionPatterns.directionFromVector(pointer.x - 260, pointer.y - 230).toLowerCase();
     customPet.className = `custom-pet ${next} group-${actionPatterns.actionGroup(next)} dir-${direction}`;
   }
-  if (!silent && lines[next]) speak(lines[next][Math.floor(Math.random() * lines[next].length)]);
+  showActionLabel(next);
+  const choices = contextualLines(next).filter((line) => line !== lastLine);
+  if (!silent && choices.length) {
+    lastLine = choices[Math.floor(Math.random() * choices.length)];
+    speak(lastLine);
+  }
 }
 
 function ellipse(x, y, rx, ry, fill, rotation = 0) {
@@ -67,6 +179,9 @@ function drawMomo(time) {
   const sleeping = action === "sleep";
   const study = action === "study";
   const alert = action === "alert";
+  const feeding = action === "feed";
+  const playing = action === "play";
+  const petting = action === "pet";
   const blink = sleeping || time < blinkAt;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -212,6 +327,46 @@ function drawMomo(time) {
     ctx.stroke();
     ctx.restore();
   }
+
+  if (feeding) {
+    ellipse(0, 92 + phase * 3, 42, 42, "#d98b45");
+    for (const [x, y] of [[-15, 77], [14, 83], [-4, 105], [19, 111]]) ellipse(x, y + phase * 3, 5, 5, "#75452f");
+    ellipse(-48, 103, 30, 20, body, -.25);
+    ellipse(48, 103, 30, 20, body, .25);
+  }
+
+  if (playing) {
+    ctx.strokeStyle = "#72533f";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-126, 85);
+    ctx.lineTo(-170, -104);
+    ctx.stroke();
+    path([[-175, -105], [-211, -152], [-172, -139]], "#ef805d");
+    path([[-175, -105], [-142, -156], [-151, -117]], "#6a95bb");
+  }
+
+  if (petting) {
+    ctx.font = "bold 28px Segoe UI Emoji";
+    ctx.fillStyle = "#ee7c7c";
+    ctx.fillText("♥", -118, -132 - Math.max(0, phase) * 10);
+    ctx.fillText("♥", 95, -102 + Math.min(0, phase) * 10);
+  }
+
+  if (action === "celebrate") {
+    const confetti = [
+      [-142, -112, "#ef805d"], [-95, -165, "#f1c85b"], [112, -142, "#6f9dc2"],
+      [151, -75, "#82b98d"], [82, -178, "#e58abc"],
+    ];
+    for (const [x, y, color] of confetti) {
+      ctx.save();
+      ctx.translate(x, y + phase * 7);
+      ctx.rotate(t + x);
+      ctx.fillStyle = color;
+      ctx.fillRect(-5, -10, 10, 20);
+      ctx.restore();
+    }
+  }
   ctx.restore();
 }
 
@@ -219,6 +374,10 @@ function frame(time) {
   if (!customDataUrl) drawMomo(time);
   if (time > actionUntil && action !== "idle") {
     action = "idle";
+    if (usesActionArt) {
+      actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/idle.webp`;
+      actionPet.className = "action-pet idle";
+    }
     customPet.className = "custom-pet idle";
   }
   if (!blinkAt || time > blinkAt + 180) blinkAt = time + 2200 + Math.random() * 3500;
@@ -229,28 +388,85 @@ function useState(next) {
   state = next;
   const selected = state.customPets?.find((item) => item.id === state.settings.activePet);
   customDataUrl = selected?.dataUrl || "";
+  activeActionPet = builtInActionPets[state.settings.activePet];
+  usesActionArt = Boolean(activeActionPet);
   customPet.src = customDataUrl;
   customPet.style.display = customDataUrl ? "block" : "none";
-  canvas.style.display = customDataUrl ? "none" : "block";
+  actionPet.style.display = usesActionArt ? "block" : "none";
+  canvas.style.display = customDataUrl || usesActionArt ? "none" : "block";
+  if (usesActionArt) {
+    const pose = activeActionPet.poses[action] || poseForAction[action] || "idle";
+    actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/${pose}.webp`;
+  }
 }
 
-canvas.addEventListener("pointermove", (event) => {
-  const rect = canvas.getBoundingClientRect();
+stage.addEventListener("pointermove", (event) => {
+  const rect = stage.getBoundingClientRect();
   pointer = {
     x: ((event.clientX - rect.left) / rect.width) * canvas.width,
     y: ((event.clientY - rect.top) / rect.height) * canvas.height,
   };
+  if (!dragState) return;
+  const deltaX = event.screenX - dragState.startX;
+  const deltaY = event.screenY - dragState.startY;
+  if (!dragState.moved && Math.hypot(deltaX, deltaY) > 4) {
+    dragState.moved = true;
+    stage.classList.add("dragging");
+    setAction("walk", 60_000, true);
+  }
+  if (dragState.moved) {
+    if (Math.abs(deltaX) > 2) {
+      actionPet.style.setProperty("--direction-scale", deltaX < 0 ? "-1" : "1");
+      customPet.style.setProperty("--direction-scale", deltaX < 0 ? "-1" : "1");
+    }
+    window.petdesk.petDrag({ phase: "move", screenX: event.screenX, screenY: event.screenY });
+  }
 });
 
-document.querySelector("#stage").addEventListener("dblclick", () => window.petdesk.openPanel());
-document.querySelector("#stage").addEventListener("click", () => {
+stage.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0 || event.target.closest(".pet-menu")) return;
+  dragState = { pointerId: event.pointerId, startX: event.screenX, startY: event.screenY, moved: false };
+  stage.setPointerCapture(event.pointerId);
+  window.petdesk.petDrag({ phase: "start", screenX: event.screenX, screenY: event.screenY });
+});
+
+stage.addEventListener("pointerup", (event) => {
+  if (!dragState || event.pointerId !== dragState.pointerId) return;
+  window.petdesk.petDrag({ phase: "end", screenX: event.screenX, screenY: event.screenY });
+  if (dragState.moved) {
+    suppressClickUntil = Date.now() + 450;
+    setAction("idle", actionPatterns.actionDuration("idle"), true);
+  }
+  stage.classList.remove("dragging");
+  dragState = null;
+});
+
+stage.addEventListener("pointercancel", () => {
+  window.petdesk.petDrag({ phase: "end" });
+  stage.classList.remove("dragging");
+  dragState = null;
+});
+
+stage.addEventListener("pointerenter", () => {
+  if (!state?.settings?.hoverReaction || Date.now() < hoverCooldown || action !== "idle") return;
+  hoverCooldown = Date.now() + 7000;
+  setAction("play", 1400, true);
+});
+
+stage.addEventListener("dblclick", (event) => {
+  if (!event.target.closest(".pet-menu")) window.petdesk.openPanel();
+});
+stage.addEventListener("click", (event) => {
+  if (event.target.closest(".pet-menu")) return;
+  if (Date.now() < suppressClickUntil) return;
   const now = Date.now();
   if (now - lastTap < 360) return;
   lastTap = now;
   setAction("pet", 1800);
 });
-document.querySelector("#stage").addEventListener("contextmenu", (event) => {
+stage.addEventListener("contextmenu", (event) => {
   event.preventDefault();
+  if (dragState?.moved) return;
   menu.classList.toggle("show");
 });
 menu.addEventListener("click", (event) => {
@@ -258,7 +474,17 @@ menu.addEventListener("click", (event) => {
   if (!button) return;
   menu.classList.remove("show");
   if (button.dataset.open !== undefined) window.petdesk.openPanel();
-  else setAction(button.dataset.action);
+  else if (button.dataset.chat !== undefined) {
+    const choices = contextualLines("idle");
+    const next = choices.filter((line) => line !== lastLine);
+    lastLine = next[Math.floor(Math.random() * next.length)] || choices[0];
+    speak(lastLine, 5200);
+    setAction("idle", 2400, true);
+  }
+  else setAction(button.dataset.action, button.dataset.action === "study" ? 12_000 : actionPatterns.actionDuration(button.dataset.action));
+});
+window.addEventListener("click", (event) => {
+  if (!event.target.closest(".pet-menu")) menu.classList.remove("show");
 });
 
 window.petdesk.getState().then(useState);
@@ -271,11 +497,23 @@ window.petdesk.onPetSpeak(({ text, action: next }) => {
   if (next) setAction(next);
   speak(text, 5600);
 });
-setInterval(() => {
-  if (action !== "idle" || document.hidden) return;
-  const choices = ["idle", "walk", "stretch", "idle", "idle"];
+setInterval(async () => {
+  if (action !== "idle" || document.hidden || dragState || menu.classList.contains("show")) return;
+  const frequency = state?.settings?.interactionFrequency || "normal";
+  const actionChance = { quiet: 0.28, normal: 0.56, chatty: 0.78 }[frequency];
+  if (Math.random() > actionChance) return;
+  const choices = ["walk", "stretch", "play", "idle", "idle"];
   const next = choices[Math.floor(Math.random() * choices.length)];
-  if (next !== "idle") setAction(next, 3200);
-  else if (Math.random() > 0.58) speak(lines.idle[Math.floor(Math.random() * lines.idle.length)]);
-}, 9500);
+  if (next === "walk") {
+    const distance = Math.random() > 0.5 ? 100 + Math.random() * 80 : -(100 + Math.random() * 80);
+    setAction("walk", 2600, true);
+    await window.petdesk.roamPet(distance);
+  } else if (next !== "idle") {
+    setAction(next, 2600, frequency === "quiet");
+  } else if (frequency === "chatty" || Math.random() > 0.6) {
+    const choicesForIdle = contextualLines("idle").filter((line) => line !== lastLine);
+    lastLine = choicesForIdle[Math.floor(Math.random() * choicesForIdle.length)] || lines.idle[0];
+    speak(lastLine);
+  }
+}, 12_500);
 requestAnimationFrame(frame);

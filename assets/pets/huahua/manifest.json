@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "huahua",
+  "name": "毕业花花",
+  "actionPattern": "petdesk-standard-v1",
+  "artStyle": "2d-chibi",
+  "generatedFor": "PetDesk",
+  "character": {
+    "hair": "long-black",
+    "hat": "flowered-mortarboard",
+    "collar": "pink",
+    "prop": "colorful-graduation-bouquet"
+  },
+  "actions": {
+    "idle": "actions/idle.webp",
+    "walk": "actions/walk.webp",
+    "pet": "actions/pet.webp",
+    "stretch": "actions/stretch.webp",
+    "play": "actions/play.webp",
+    "study": "actions/study.webp",
+    "sleep": "actions/sleep.webp",
+    "celebrate": "actions/celebrate.webp",
+    "alert": "actions/alert.webp"
+  },
+  "fallbacks": {
+    "blink": "idle",
+    "run": "walk",
+    "jump": "celebrate",
+    "feed": "play",
+    "drink": "idle",
+    "write": "study",
+    "type": "study",
+    "nap": "sleep",
+    "yawn": "sleep",
+    "dance": "celebrate",
+    "happy": "celebrate",
+    "alarm": "alert",
+    "surprised": "alert"
+  }
+}

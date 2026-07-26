@@ -75,6 +75,11 @@ function homeTemplate() {
   const open = state.todos.filter((item) => !item.done);
   const progress = state.todos.length ? Math.round((state.todos.filter((item) => item.done).length / state.todos.length) * 100) : 0;
   const custom = state.customPets.find((item) => item.id === state.settings.activePet);
+  const builtInPortraits = {
+    momo: { src: "../assets/pets/taotao/actions/idle.webp", alt: "桃桃" },
+    huahua: { src: "../assets/pets/huahua/actions/idle.webp", alt: "毕业花花" },
+  };
+  const builtInPortrait = builtInPortraits[state.settings.activePet] || builtInPortraits.momo;
   const weather = state.weather?.current;
   const weatherLocation = state.weather?.location;
   return `<div class="grid two">
@@ -85,7 +90,7 @@ function homeTemplate() {
         <p>把任务分成一个个小步骤。专注的时候，它会安静看书；完成的时候，它会和你一起庆祝。</p>
         <div class="hero-actions"><button class="button orange" data-start-focus>开始专注</button><button class="button ghost" style="color:#fff;border-color:#708279" data-pet-play>和它玩一会儿</button></div>
       </div>
-      <div class="pet-portrait"><span class="orb"></span>${custom ? `<img src="${custom.dataUrl}" alt="">` : `<img src="../assets/mascot.png" alt="桃桃">`}</div>
+      <div class="pet-portrait"><span class="orb"></span>${custom ? `<img src="${custom.dataUrl}" alt="">` : `<img src="${builtInPortrait.src}" alt="${builtInPortrait.alt}">`}</div>
     </div>
     <div class="grid">
       <div class="card"><div class="card-head"><h3>今日进度</h3><small>${progress}%</small></div>
@@ -121,7 +126,8 @@ function homeTemplate() {
 
 function petsTemplate() {
   const builtIns = [
-    { id: "momo", type: "cat", name: "桃桃", icon: "../assets/mascot.png", body: "#f2a65a", accent: "#fff0d6", note: "橘猫 · 好奇亲人" },
+    { id: "momo", type: "cat", name: "桃桃", icon: "../assets/pets/taotao/actions/idle.webp", body: "#f2a65a", accent: "#fff0d6", note: "橘猫 · 九种独立动作" },
+    { id: "huahua", name: "毕业花花", icon: "../assets/pets/huahua/actions/idle.webp", note: "Q版毕业生 · 九种独立动作" },
     { id: "doubao", type: "dog", name: "豆包", emoji: "🐶", body: "#bd7a49", accent: "#f4ddbe", note: "柴犬 · 热情可靠" },
     { id: "yuki", type: "rabbit", name: "雪团", emoji: "🐰", body: "#eee9de", accent: "#f2b8b5", note: "兔子 · 安静敏捷" },
     { id: "foxy", type: "fox", name: "小焰", emoji: "🦊", body: "#e77d3d", accent: "#fff1da", note: "狐狸 · 聪明活泼" },
@@ -134,8 +140,8 @@ function petsTemplate() {
   const customCards = state.customPets.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}" data-select-pet="${pet.id}">
     <div class="preview"><img src="${pet.dataUrl}" alt=""></div><b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · 自定义</small></div>`).join("");
   const actionButtons = [
-    ["idle", "待机"], ["walk", "行走"], ["stretch", "伸懒腰"],
-    ["play", "玩耍"], ["feed", "进食"], ["study", "学习"],
+    ["idle", "待机"], ["walk", "行走"], ["pet", "抚摸"],
+    ["stretch", "伸懒腰"], ["play", "玩耍"], ["study", "读书"],
     ["sleep", "休息"], ["celebrate", "庆祝"], ["alert", "提醒"],
   ];
   return `<div class="card">
@@ -165,7 +171,7 @@ function petsTemplate() {
   </div>
   <div class="card" style="margin-top:18px"><div class="card-head"><h3>动作实验室</h3><small>立即预览桌宠动作</small></div>
     <div class="action-lab">${actionButtons.map(([name, label]) => `<button class="button ghost small" data-pet-action="${name}">${label}<small>${name}</small></button>`).join("")}</div>
-    <p class="muted action-note">已使用 PetDesk 标准动作模式 v1：九类状态与 16 方向，可继续扩展 Sprite Sheet 角色包。</p>
+    <p class="muted action-note">桃桃和毕业花花均内置独立动作图；点击按钮会立即切换姿态。桌面上按住身体即可拖动，拖动时会切换为行走。</p>
   </div>`;
 }
 
@@ -275,6 +281,9 @@ function settingsTemplate() {
       <div class="setting-row"><div><b>桌宠显示状态</b><small>${state.runtime.petVisible ? "当前显示在桌面上" : "当前已隐藏，可随时恢复"}</small></div><button class="button ghost small" data-toggle-pet>${state.runtime.petVisible ? "隐藏" : "显示"}</button></div>
       ${switchRow("alwaysOnTop", "始终置顶", "让桌宠保持在其他窗口上方")}
       ${switchRow("clickThrough", "鼠标穿透", "临时忽略鼠标；可从托盘恢复")}
+      ${switchRow("autonomousRoaming", "自主走动", "空闲时偶尔在屏幕底部换个位置")}
+      ${switchRow("hoverReaction", "悬停反应", "鼠标靠近时主动玩耍")}
+      ${switchRow("showActionLabel", "动作提示", "动作开始时显示名称，反馈更加明显")}
       ${switchRow("startup", "开机启动", "登录 Windows 后自动运行")}
       ${switchRow("sound", "通知声音", "闹钟和完成提醒播放系统声音")}
     </div>
@@ -381,12 +390,16 @@ document.addEventListener("click", async (event) => {
   if (!target) return;
   if (target.dataset.page) navigate(target.dataset.page);
   if (target.dataset.goto) navigate(target.dataset.goto);
-  if (target.dataset.petAction) window.petdesk.petAction(target.dataset.petAction);
+  if (target.dataset.petAction) {
+    if (state.runtime.petVisible === false) await window.petdesk.setPetVisibility(true);
+    await window.petdesk.petAction(target.dataset.petAction);
+  }
   if (target.dataset.startFocus !== undefined) { navigate("focus"); window.petdesk.startFocus(1500); }
   if (target.dataset.petPlay !== undefined) window.petdesk.petAction("play");
   if (target.dataset.selectPet) {
     const next = clone(state);
     next.settings.activePet = target.dataset.selectPet;
+    if (target.dataset.petName) next.settings.petName = target.dataset.petName;
     if (target.dataset.petType) {
       next.settings.petType = target.dataset.petType;
       next.settings.petName = target.dataset.petName;
