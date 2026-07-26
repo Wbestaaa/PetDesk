@@ -5,6 +5,8 @@ const menu = document.querySelector("#menu");
 const customPet = document.querySelector("#customPet");
 const actionPet = document.querySelector("#actionPet");
 const actionIndicator = document.querySelector("#actionIndicator");
+const reactionBurst = document.querySelector("#reactionBurst");
+const petMenuTitle = document.querySelector("#petMenuTitle");
 const stage = document.querySelector("#stage");
 let state;
 let action = "idle";
@@ -23,32 +25,11 @@ let indicatorTimer;
 let hoverCooldown = 0;
 
 const actionPatterns = window.PetActionPatterns;
+const petCatalog = window.PetCatalog;
 const lines = actionPatterns.ACTION_LINES;
-const builtInActionPets = {
-  momo: {
-    folder: "taotao",
-    poses: {
-      idle: "idle", blink: "idle", pet: "idle", walk: "walk", run: "walk",
-      jump: "celebrate", stretch: "stretch", play: "play", feed: "feed",
-      drink: "feed", study: "study", write: "study", type: "study",
-      sleep: "sleep", nap: "sleep", yawn: "sleep", celebrate: "celebrate",
-      dance: "celebrate", happy: "celebrate", alert: "alert", alarm: "alert",
-      surprised: "alert",
-    },
-  },
-  huahua: {
-    folder: "huahua",
-    poses: {
-      idle: "idle", blink: "idle", pet: "pet", walk: "walk", run: "walk",
-      jump: "celebrate", stretch: "stretch", play: "play", feed: "play",
-      drink: "idle", study: "study", write: "study", type: "study",
-      sleep: "sleep", nap: "sleep", yawn: "sleep", celebrate: "celebrate",
-      dance: "celebrate", happy: "celebrate", alert: "alert", alarm: "alert",
-      surprised: "alert",
-    },
-  },
-};
 let activeActionPet;
+let activeManifest;
+let manifestRequest = 0;
 const poseForAction = {
   idle: "idle",
   blink: "idle",
@@ -103,7 +84,44 @@ function contextualLines(next) {
   if (next === "study" && state?.focus?.duration) {
     context.push(`这次专注 ${Math.round(state.focus.duration / 60)} 分钟，我会安静陪你。`);
   }
-  return [...(lines[next] || []), ...context];
+  const personality = activeManifest?.speech?.[next] || [];
+  return [...personality, ...(lines[next] || []), ...context];
+}
+
+function resolveActionSource(next) {
+  if (!activeActionPet || !activeManifest) return null;
+  const direct = activeManifest.actions?.[next];
+  if (direct) return `../assets/pets/${activeActionPet.folder}/${direct}`;
+  const fallbackName = activeManifest.fallbacks?.[next] || poseForAction[next] || "idle";
+  const fallback = activeManifest.actions?.[fallbackName] || activeManifest.actions?.idle;
+  return fallback ? `../assets/pets/${activeActionPet.folder}/${fallback}` : null;
+}
+
+function displayActionArt(next) {
+  const source = resolveActionSource(next);
+  if (source) actionPet.src = source;
+}
+
+async function loadActionManifest(definition) {
+  const request = ++manifestRequest;
+  activeManifest = null;
+  try {
+    const response = await fetch(`../assets/pets/${definition.folder}/manifest.json`);
+    if (!response.ok) throw new Error(`manifest ${response.status}`);
+    const manifest = await response.json();
+    if (request !== manifestRequest || state?.settings?.activePet !== definition.id) return;
+    activeManifest = manifest;
+    const sources = Object.values(manifest.actions || {})
+      .map((relative) => `../assets/pets/${definition.folder}/${relative}`);
+    sources.forEach((source) => {
+      const image = new Image();
+      image.src = source;
+    });
+    actionPet.alt = manifest.name || definition.name;
+    displayActionArt(action);
+  } catch (error) {
+    console.error(`Unable to load ${definition.name} action manifest`, error);
+  }
 }
 
 function showActionLabel(next) {
@@ -121,17 +139,21 @@ function speak(text, duration = 3200) {
   bubbleTimer = setTimeout(() => bubble.classList.remove("show"), duration);
 }
 
+function showReactionBurst() {
+  reactionBurst.classList.remove("show");
+  void reactionBurst.offsetWidth;
+  reactionBurst.classList.add("show");
+}
+
 function setAction(next, duration = actionPatterns.actionDuration(next), silent = false) {
   action = next;
   actionUntil = performance.now() + duration;
-  const pose = poseForAction[next] || "idle";
   const direction = actionPatterns.directionFromVector(pointer.x - 260, pointer.y - 230).toLowerCase();
   const facesLeft = ["w", "wsw", "wnw", "sw", "nw"].includes(direction);
   actionPet.style.setProperty("--direction-scale", facesLeft ? "-1" : "1");
   customPet.style.setProperty("--direction-scale", facesLeft ? "-1" : "1");
   if (usesActionArt) {
-    const actionPose = activeActionPet.poses[next] || pose;
-    actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/${actionPose}.webp`;
+    displayActionArt(next);
     actionPet.className = `action-pet ${next} dir-${direction}`;
   }
   if (customDataUrl) {
@@ -375,7 +397,7 @@ function frame(time) {
   if (time > actionUntil && action !== "idle") {
     action = "idle";
     if (usesActionArt) {
-      actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/idle.webp`;
+      displayActionArt("idle");
       actionPet.className = "action-pet idle";
     }
     customPet.className = "custom-pet idle";
@@ -388,15 +410,21 @@ function useState(next) {
   state = next;
   const selected = state.customPets?.find((item) => item.id === state.settings.activePet);
   customDataUrl = selected?.dataUrl || "";
-  activeActionPet = builtInActionPets[state.settings.activePet];
+  const nextActionPet = petCatalog.findBuiltInPet(state.settings.activePet);
+  const actionPetChanged = nextActionPet?.id !== activeActionPet?.id;
+  activeActionPet = nextActionPet?.kind === "action-art" ? nextActionPet : null;
   usesActionArt = Boolean(activeActionPet);
+  petMenuTitle.textContent = `和${state.settings.petName || activeActionPet?.name || "桌宠"}互动`;
   customPet.src = customDataUrl;
   customPet.style.display = customDataUrl ? "block" : "none";
   actionPet.style.display = usesActionArt ? "block" : "none";
   canvas.style.display = customDataUrl || usesActionArt ? "none" : "block";
   if (usesActionArt) {
-    const pose = activeActionPet.poses[action] || poseForAction[action] || "idle";
-    actionPet.src = `../assets/pets/${activeActionPet.folder}/actions/${pose}.webp`;
+    if (actionPetChanged || !activeManifest) loadActionManifest(activeActionPet);
+    else displayActionArt(action);
+  } else {
+    activeManifest = null;
+    manifestRequest += 1;
   }
 }
 
@@ -409,6 +437,12 @@ stage.addEventListener("pointermove", (event) => {
   if (!dragState) return;
   const deltaX = event.screenX - dragState.startX;
   const deltaY = event.screenY - dragState.startY;
+  const now = performance.now();
+  const elapsed = Math.max(1, now - dragState.lastAt);
+  dragState.speed = Math.hypot(event.screenX - dragState.lastX, event.screenY - dragState.lastY) / elapsed;
+  dragState.lastX = event.screenX;
+  dragState.lastY = event.screenY;
+  dragState.lastAt = now;
   if (!dragState.moved && Math.hypot(deltaX, deltaY) > 4) {
     dragState.moved = true;
     stage.classList.add("dragging");
@@ -425,7 +459,16 @@ stage.addEventListener("pointermove", (event) => {
 
 stage.addEventListener("pointerdown", (event) => {
   if (event.button !== 0 || event.target.closest(".pet-menu")) return;
-  dragState = { pointerId: event.pointerId, startX: event.screenX, startY: event.screenY, moved: false };
+  dragState = {
+    pointerId: event.pointerId,
+    startX: event.screenX,
+    startY: event.screenY,
+    lastX: event.screenX,
+    lastY: event.screenY,
+    lastAt: performance.now(),
+    speed: 0,
+    moved: false,
+  };
   stage.setPointerCapture(event.pointerId);
   window.petdesk.petDrag({ phase: "start", screenX: event.screenX, screenY: event.screenY });
 });
@@ -435,7 +478,12 @@ stage.addEventListener("pointerup", (event) => {
   window.petdesk.petDrag({ phase: "end", screenX: event.screenX, screenY: event.screenY });
   if (dragState.moved) {
     suppressClickUntil = Date.now() + 450;
-    setAction("idle", actionPatterns.actionDuration("idle"), true);
+    if (dragState.speed > 1.15) {
+      showReactionBurst();
+      setAction("celebrate", 1500);
+    } else {
+      setAction("idle", actionPatterns.actionDuration("idle"), true);
+    }
   }
   stage.classList.remove("dragging");
   dragState = null;
@@ -462,6 +510,7 @@ stage.addEventListener("click", (event) => {
   const now = Date.now();
   if (now - lastTap < 360) return;
   lastTap = now;
+  showReactionBurst();
   setAction("pet", 1800);
 });
 stage.addEventListener("contextmenu", (event) => {
@@ -474,6 +523,13 @@ menu.addEventListener("click", (event) => {
   if (!button) return;
   menu.classList.remove("show");
   if (button.dataset.open !== undefined) window.petdesk.openPanel();
+  else if (button.dataset.hide !== undefined) window.petdesk.setPetVisibility(false);
+  else if (button.dataset.random !== undefined) {
+    const choices = ["pet", "play", "stretch", "walk", "celebrate"];
+    const next = choices[Math.floor(Math.random() * choices.length)];
+    showReactionBurst();
+    setAction(next);
+  }
   else if (button.dataset.chat !== undefined) {
     const choices = contextualLines("idle");
     const next = choices.filter((line) => line !== lastLine);
@@ -498,9 +554,9 @@ window.petdesk.onPetSpeak(({ text, action: next }) => {
   speak(text, 5600);
 });
 setInterval(async () => {
-  if (action !== "idle" || document.hidden || dragState || menu.classList.contains("show")) return;
+  if (action !== "idle" || state?.focus?.running || document.hidden || dragState || menu.classList.contains("show")) return;
   const frequency = state?.settings?.interactionFrequency || "normal";
-  const actionChance = { quiet: 0.28, normal: 0.56, chatty: 0.78 }[frequency];
+  const actionChance = { quiet: 0.12, normal: 0.28, chatty: 0.48 }[frequency];
   if (Math.random() > actionChance) return;
   const choices = ["walk", "stretch", "play", "idle", "idle"];
   const next = choices[Math.floor(Math.random() * choices.length)];
@@ -515,5 +571,5 @@ setInterval(async () => {
     lastLine = choicesForIdle[Math.floor(Math.random() * choicesForIdle.length)] || lines.idle[0];
     speak(lastLine);
   }
-}, 12_500);
+}, 30_000);
 requestAnimationFrame(frame);

@@ -9,16 +9,30 @@
   <body>
     <div id="stage" class="stage" title="双击打开 PetDesk">
       <div id="bubble" class="bubble"></div>
+      <div id="actionIndicator" class="action-indicator"></div>
       <canvas id="pet" width="520" height="520"></canvas>
+      <img id="actionPet" class="action-pet idle" src="../assets/pets/taotao/actions/idle.webp" alt="桃桃" draggable="false" />
       <img id="customPet" class="custom-pet" alt="" />
+      <div id="reactionBurst" class="reaction-burst" aria-hidden="true"><span>♥</span><span>✦</span><span>♥</span></div>
       <div id="menu" class="pet-menu">
-        <button data-action="feed">🍪 喂食</button>
-        <button data-action="play">🪶 玩耍</button>
-        <button data-action="study">📖 陪伴专注</button>
-        <button data-action="sleep">🌙 睡觉</button>
+        <div id="petMenuTitle" class="pet-menu-title">和桃桃互动</div>
+        <div class="pet-menu-group">陪伴</div>
+        <button data-action="pet">🫳 摸摸脑袋</button>
+        <button data-action="play">🪶 一起玩耍</button>
+        <button data-action="stretch">🐾 一起伸懒腰</button>
+        <button data-random>🎲 随机互动</button>
+        <div class="pet-menu-group">效率</div>
+        <button data-action="study">📖 陪我读书</button>
+        <button data-action="sleep">🌙 安静睡觉</button>
+        <button data-action="alert">🔔 预览提醒</button>
+        <button data-action="celebrate">🎉 庆祝一下</button>
+        <div class="pet-menu-group">更多</div>
+        <button data-chat>💬 和我说句话</button>
         <button data-open>⚙️ 控制中心</button>
+        <button data-hide>◌ 暂时隐藏桌宠</button>
       </div>
     </div>
+    <script src="pet-catalog.js"></script>
     <script src="pet-actions.js"></script>
     <script src="pet.js"></script>
   </body>

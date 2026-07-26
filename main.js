@@ -20,6 +20,10 @@ let tray;
 let appState;
 let statePath;
 let scheduler;
+let petDragging = false;
+let dragOffset = { x: 0, y: 0 };
+let positionPersistTimer;
+let roamTimer;
 
 const isDev = process.argv.includes("--dev");
 const launchHidden = process.argv.includes("--hidden");
@@ -103,6 +107,51 @@ function petBounds() {
   };
 }
 
+function clampPetPosition(x, y) {
+  const point = { x: Math.round(x), y: Math.round(y) };
+  const area = screen.getDisplayNearestPoint(point).workArea;
+  const [width, height] = petWindow?.getSize() || [260, 260];
+  return {
+    x: Math.min(area.x + area.width - width, Math.max(area.x, point.x)),
+    y: Math.min(area.y + area.height - height, Math.max(area.y, point.y)),
+  };
+}
+
+function rememberPetPosition() {
+  if (!petWindow || petWindow.isDestroyed()) return;
+  clearTimeout(positionPersistTimer);
+  positionPersistTimer = setTimeout(() => {
+    if (!petWindow || petWindow.isDestroyed()) return;
+    const [x, y] = petWindow.getPosition();
+    appState.runtime.petPosition = { x, y };
+    persistState();
+  }, 180);
+}
+
+function animatePetRoam(distance = 120) {
+  if (!appState.settings.autonomousRoaming || petDragging || !petWindow?.isVisible()) return false;
+  clearInterval(roamTimer);
+  const [startX, startY] = petWindow.getPosition();
+  const target = clampPetPosition(startX + Math.max(-220, Math.min(220, Number(distance) || 120)), startY);
+  const frames = 28;
+  let frame = 0;
+  roamTimer = setInterval(() => {
+    if (!petWindow || petWindow.isDestroyed() || petDragging) {
+      clearInterval(roamTimer);
+      return;
+    }
+    frame += 1;
+    const progress = frame / frames;
+    const eased = 0.5 - Math.cos(progress * Math.PI) / 2;
+    petWindow.setPosition(Math.round(startX + (target.x - startX) * eased), target.y, false);
+    if (frame >= frames) {
+      clearInterval(roamTimer);
+      rememberPetPosition();
+    }
+  }, 24);
+  return true;
+}
+
 function createPetWindow() {
   petWindow = new BrowserWindow({
     ...petBounds(),
@@ -126,14 +175,7 @@ function createPetWindow() {
   petWindow.once("ready-to-show", () => {
     if (appState.runtime.petVisible !== false) petWindow.showInactive();
   });
-  petWindow.on("moved", () => {
-    if (!petWindow || petWindow.isDestroyed()) return;
-    appState.runtime.petPosition = petWindow.getPosition().reduce(
-      (result, value, index) => ({ ...result, [index === 0 ? "x" : "y"]: value }),
-      {}
-    );
-    persistState();
-  });
+  petWindow.on("moved", rememberPetPosition);
   petWindow.on("closed", () => {
     petWindow = null;
   });
@@ -290,6 +332,18 @@ async function loadWeather(query) {
     state.weather = forecast;
     return state;
   });
+  const weatherReaction = forecast.current;
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(weatherReaction.weatherCode)) {
+    petWindow?.webContents.send("pet:speak", {
+      text: `${location.name}正在下雨，出门记得带伞，路上慢一点。`,
+      action: "alert",
+    });
+  } else if ([0, 1].includes(weatherReaction.weatherCode) && weatherReaction.isDay) {
+    petWindow?.webContents.send("pet:speak", {
+      text: `${location.name}天气不错，完成一小段后可以看看远处。`,
+      action: "celebrate",
+    });
+  }
   return forecast;
 }
 
@@ -299,6 +353,26 @@ function registerIpc() {
   ipcMain.handle("panel:open", () => createPanelWindow());
   ipcMain.handle("pet:menu", () => createPanelWindow());
   ipcMain.handle("pet:action", (_, action) => petWindow?.webContents.send("pet:action", action));
+  ipcMain.on("pet:drag", (_, payload = {}) => {
+    if (!petWindow || petWindow.isDestroyed() || appState.settings.clickThrough) return;
+    if (payload.phase === "start") {
+      clearInterval(roamTimer);
+      petDragging = true;
+      const [windowX, windowY] = petWindow.getPosition();
+      dragOffset = { x: Number(payload.screenX) - windowX, y: Number(payload.screenY) - windowY };
+      return;
+    }
+    if (payload.phase === "move" && petDragging) {
+      const target = clampPetPosition(Number(payload.screenX) - dragOffset.x, Number(payload.screenY) - dragOffset.y);
+      petWindow.setPosition(target.x, target.y, false);
+      return;
+    }
+    if (payload.phase === "end") {
+      petDragging = false;
+      rememberPetPosition();
+    }
+  });
+  ipcMain.handle("pet:roam", (_, distance) => animatePetRoam(distance));
   ipcMain.handle("pet:visibility", (_, visible) => setPetVisibility(visible));
   ipcMain.handle("pet:toggle", () => setPetVisibility(!appState.runtime.petVisible));
   ipcMain.handle("app:quit", () => {

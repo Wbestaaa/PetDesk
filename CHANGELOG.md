@@ -6,12 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added “毕业花花” as a selectable cream-white graduation cat with nine transparent action poses and character-specific replies.
+- Added a central built-in pet catalog and manifest-driven action images, fallbacks, preloading, and dialogue.
+- Added fast-drag celebration feedback, reaction particles, grouped right-click actions, random interaction, and reminder preview.
+- Added a current-companion profile, interaction guide, richer pet cards, and nine-action preview lab to the pet selection page.
+
+### Changed
+
+- Reduced autonomous interruptions, paused them during focus sessions, and made frequency settings meaningfully affect behavior.
+- Made weather refresh trigger contextual rain alerts or sunny celebration responses.
+- Hid procedural color controls for image-based pets whose native palettes should not be recolored.
+
+### Fixed
+
+- Redesigned “毕业花花” with an unmistakable cat head, ears, muzzle, whiskers, four paws, and tail; black is now limited to her long hair, mortarboard, and short academic cape instead of covering the body.
+
 ## [0.2.0] - 2026-07-26
 
 ### Added
 
 - PetDesk standard action pattern v1 with nine action groups and 16 directions.
 - Reusable custom-pet package documentation and runtime action metadata.
+- Generated Taotao action pack with nine independent transparent poses.
+- Pointer hover reactions, optional autonomous roaming, action labels, and contextual dialogue.
 - Custom focus durations from 1 to 240 minutes.
 - City-based current weather and four-day forecast powered by Open-Meteo.
 - Weather and action-pattern unit tests.
@@ -26,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Replaced the one-way hide button with a visible status toggle that can restore the pet.
 - Kept the tray menu label synchronized with the saved pet visibility state.
 - Honored the `--hidden` launch argument for the control-center window.
+- Replaced the blocked native drag region with pointer-based dragging and persisted the final position.
+- Made right-click actions visibly change the built-in pet pose instead of relying on subtle canvas motion alone.
 
 ## [0.1.1] - 2026-07-26
 

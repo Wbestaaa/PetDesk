@@ -14,6 +14,7 @@ const pageTitles = {
   weather: "出门前，先看看今天的天空",
   settings: "按照你的方式陪伴",
 };
+const petCatalog = window.PetCatalog;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -75,11 +76,12 @@ function homeTemplate() {
   const open = state.todos.filter((item) => !item.done);
   const progress = state.todos.length ? Math.round((state.todos.filter((item) => item.done).length / state.todos.length) * 100) : 0;
   const custom = state.customPets.find((item) => item.id === state.settings.activePet);
-  const builtInPortraits = {
-    momo: { src: "../assets/pets/taotao/actions/idle.webp", alt: "桃桃" },
-    huahua: { src: "../assets/pets/huahua/actions/idle.webp", alt: "毕业花花" },
-  };
-  const builtInPortrait = builtInPortraits[state.settings.activePet] || builtInPortraits.momo;
+  const builtInPortrait = petCatalog.findBuiltInPet(state.settings.activePet) || petCatalog.findBuiltInPet("momo");
+  const portrait = custom
+    ? `<img src="${custom.dataUrl}" alt="${escapeHtml(custom.name)}">`
+    : builtInPortrait.icon
+      ? `<img src="${builtInPortrait.icon}" alt="${builtInPortrait.name}">`
+      : `<span class="hero-emoji">${builtInPortrait.emoji}</span>`;
   const weather = state.weather?.current;
   const weatherLocation = state.weather?.location;
   return `<div class="grid two">
@@ -90,7 +92,7 @@ function homeTemplate() {
         <p>把任务分成一个个小步骤。专注的时候，它会安静看书；完成的时候，它会和你一起庆祝。</p>
         <div class="hero-actions"><button class="button orange" data-start-focus>开始专注</button><button class="button ghost" style="color:#fff;border-color:#708279" data-pet-play>和它玩一会儿</button></div>
       </div>
-      <div class="pet-portrait"><span class="orb"></span>${custom ? `<img src="${custom.dataUrl}" alt="">` : `<img src="${builtInPortrait.src}" alt="${builtInPortrait.alt}">`}</div>
+      <div class="pet-portrait"><span class="orb"></span>${portrait}</div>
     </div>
     <div class="grid">
       <div class="card"><div class="card-head"><h3>今日进度</h3><small>${progress}%</small></div>
@@ -125,31 +127,60 @@ function homeTemplate() {
 }
 
 function petsTemplate() {
-  const builtIns = [
-    { id: "momo", type: "cat", name: "桃桃", icon: "../assets/pets/taotao/actions/idle.webp", body: "#f2a65a", accent: "#fff0d6", note: "橘猫 · 九种独立动作" },
-    { id: "huahua", name: "毕业花花", icon: "../assets/pets/huahua/actions/idle.webp", note: "Q版毕业生 · 九种独立动作" },
-    { id: "doubao", type: "dog", name: "豆包", emoji: "🐶", body: "#bd7a49", accent: "#f4ddbe", note: "柴犬 · 热情可靠" },
-    { id: "yuki", type: "rabbit", name: "雪团", emoji: "🐰", body: "#eee9de", accent: "#f2b8b5", note: "兔子 · 安静敏捷" },
-    { id: "foxy", type: "fox", name: "小焰", emoji: "🦊", body: "#e77d3d", accent: "#fff1da", note: "狐狸 · 聪明活泼" },
-    { id: "mochi", type: "slime", name: "麻薯", emoji: "🟢", body: "#83b895", accent: "#dff0df", note: "史莱姆 · 软弹治愈" },
-  ];
+  const builtIns = petCatalog.BUILT_IN_PETS;
+  const activeBuiltIn = petCatalog.findBuiltInPet(state.settings.activePet);
+  const activeCustom = state.customPets.find((pet) => pet.id === state.settings.activePet);
+  const activePet = activeBuiltIn || {
+    name: activeCustom?.name || state.settings.petName,
+    note: `${activeCustom?.style || "图片"} · 自定义`,
+    description: "使用你上传并保存的专属桌宠形象。",
+    tags: ["自定义角色", "单图动画"],
+    icon: activeCustom?.dataUrl,
+    kind: "custom",
+  };
   const builtInCards = builtIns.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}"
-    data-select-pet="${pet.id}" data-pet-type="${pet.type}" data-pet-name="${pet.name}" data-body="${pet.body}" data-accent="${pet.accent}">
+    data-select-pet="${pet.id}" data-pet-type="${pet.type}" data-pet-name="${pet.name}" data-body="${pet.body || ""}" data-accent="${pet.accent || ""}">
+    ${state.settings.activePet === pet.id ? `<span class="selected-mark">使用中</span>` : ""}
     <div class="preview">${pet.icon ? `<img src="${pet.icon}" alt="${pet.name}">` : `<span class="procedural-pet">${pet.emoji}</span>`}</div>
-    <b>${pet.name}</b><small>${pet.note}</small></div>`).join("");
+    <b>${pet.name}</b><small>${pet.note}</small>
+    <div class="pet-card-tags">${pet.tags.slice(0, 2).map((tag) => `<span>${tag}</span>`).join("")}</div></div>`).join("");
   const customCards = state.customPets.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}" data-select-pet="${pet.id}">
     <div class="preview"><img src="${pet.dataUrl}" alt=""></div><b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · 自定义</small></div>`).join("");
   const actionButtons = [
-    ["idle", "待机"], ["walk", "行走"], ["pet", "抚摸"],
-    ["stretch", "伸懒腰"], ["play", "玩耍"], ["study", "读书"],
-    ["sleep", "休息"], ["celebrate", "庆祝"], ["alert", "提醒"],
+    ["idle", "🌿", "待机", "呼吸与陪伴"], ["walk", "🐾", "行走", "拖动与巡视"],
+    ["pet", "🫳", "抚摸", "点击反馈"], ["stretch", "↗", "伸懒腰", "久坐放松"],
+    ["play", "🪶", "玩耍", "短暂休息"], ["study", "📖", "读书", "专注陪伴"],
+    ["sleep", "🌙", "睡觉", "安静模式"], ["celebrate", "🎉", "庆祝", "任务完成"],
+    ["alert", "🔔", "提醒", "闹钟触发"],
   ];
-  return `<div class="card">
+  const activeVisual = activePet.icon
+    ? `<img src="${activePet.icon}" alt="${escapeHtml(activePet.name)}">`
+    : `<span class="procedural-pet">${activePet.emoji || "🐾"}</span>`;
+  return `<div class="card pet-profile">
+    <div class="pet-profile-visual">${activeVisual}</div>
+    <div class="pet-profile-copy">
+      <small>CURRENT COMPANION</small>
+      <h2>${escapeHtml(activePet.name)}</h2>
+      <b>${escapeHtml(activePet.note || "")}</b>
+      <p>${escapeHtml(activePet.description || "")}</p>
+      <div class="profile-tags">${(activePet.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+      <div class="profile-actions"><button class="button" data-pet-action="pet">摸摸它</button><button class="button ghost" data-pet-random>随机互动</button></div>
+    </div>
+    <div class="interaction-cheatsheet">
+      <b>桌面交互</b>
+      <span><i>单击</i> 抚摸回应</span><span><i>拖动</i> 行走与换位</span>
+      <span><i>快速放手</i> 惊喜庆祝</span><span><i>右键</i> 完整动作菜单</span>
+    </div>
+  </div>
+  <div class="card" style="margin-top:18px">
     <div class="card-head"><div><h2>我的桌宠</h2><p class="muted" style="font-size:11px;margin:6px 0 0">选择当前出现在桌面的伙伴</p></div></div>
     <div class="pet-grid">
       ${builtInCards}
       ${customCards}
     </div>
+  </div>
+  <div class="card" style="margin-top:18px"><div class="card-head"><div><h3>动作实验室</h3><p class="muted action-subtitle">点击动作会唤醒隐藏桌宠并立即预览</p></div><small>由角色 manifest 决定素材与回退</small></div>
+    <div class="action-lab">${actionButtons.map(([name, icon, label, hint]) => `<button class="action-button" data-pet-action="${name}"><span>${icon}</span><b>${label}</b><small>${hint}</small></button>`).join("")}</div>
   </div>
   <div class="card" style="margin-top:18px">
     <div class="card-head"><div><h2>桌宠工坊</h2><p class="muted" style="font-size:11px;margin:6px 0 0">上传照片，制作像素、Q版、写实或水彩风伙伴</p></div></div>
@@ -168,10 +199,6 @@ function petsTemplate() {
         <small class="muted">像素风无需联网；AI 风格需要在系统环境变量中设置 OPENAI_API_KEY，API 费用与 ChatGPT 订阅分开计算。</small>
       </div>
     </div>
-  </div>
-  <div class="card" style="margin-top:18px"><div class="card-head"><h3>动作实验室</h3><small>立即预览桌宠动作</small></div>
-    <div class="action-lab">${actionButtons.map(([name, label]) => `<button class="button ghost small" data-pet-action="${name}">${label}<small>${name}</small></button>`).join("")}</div>
-    <p class="muted action-note">桃桃和毕业花花均内置独立动作图；点击按钮会立即切换姿态。桌面上按住身体即可拖动，拖动时会切换为行走。</p>
   </div>`;
 }
 
@@ -276,6 +303,12 @@ function switchRow(key, title, desc) {
 }
 
 function settingsTemplate() {
+  const activeBuiltIn = petCatalog.findBuiltInPet(state.settings.activePet);
+  const supportsColorControls = activeBuiltIn?.kind === "procedural";
+  const appearanceControls = supportsColorControls
+    ? `<label class="setting-row"><div><b>毛色</b><small>内置动态桌宠颜色</small></div><input data-color-setting="bodyColor" class="color-input" type="color" value="${state.settings.bodyColor}"></label>
+      <label class="setting-row"><div><b>腹部与脚垫</b><small>内置动态桌宠辅助色</small></div><input data-color-setting="accentColor" class="color-input" type="color" value="${state.settings.accentColor}"></label>`
+    : `<div class="setting-row locked-style"><div><b>角色原生配色</b><small>${activeBuiltIn?.name || "自定义角色"}使用自己的动作素材，颜色不会被全局设置覆盖</small></div><span>已锁定</span></div>`;
   return `<div class="settings-grid">
     <div class="card"><div class="card-head"><h3>桌面行为</h3></div>
       <div class="setting-row"><div><b>桌宠显示状态</b><small>${state.runtime.petVisible ? "当前显示在桌面上" : "当前已隐藏，可随时恢复"}</small></div><button class="button ghost small" data-toggle-pet>${state.runtime.petVisible ? "隐藏" : "显示"}</button></div>
@@ -290,8 +323,7 @@ function settingsTemplate() {
     <div class="card"><div class="card-head"><h3>外观</h3></div>
       <label class="setting-row"><div><b>桌宠名字</b><small>显示在问候与通知中</small></div><input data-text-setting="petName" class="field" style="width:130px" value="${escapeHtml(state.settings.petName)}"></label>
       <label class="setting-row"><div><b>显示大小</b><small>${Math.round(state.settings.petScale * 100)}%</small></div><input data-range-setting="petScale" type="range" min=".65" max="1.45" step=".05" value="${state.settings.petScale}"></label>
-      <label class="setting-row"><div><b>毛色</b><small>内置动态桌宠颜色</small></div><input data-color-setting="bodyColor" class="color-input" type="color" value="${state.settings.bodyColor}"></label>
-      <label class="setting-row"><div><b>腹部与脚垫</b><small>内置动态桌宠辅助色</small></div><input data-color-setting="accentColor" class="color-input" type="color" value="${state.settings.accentColor}"></label>
+      ${appearanceControls}
     </div>
     <div class="card"><div class="card-head"><h3>互动频率</h3></div>
       <label class="field-label">桌宠主动说话<select data-select-setting="interactionFrequency"><option value="quiet" ${state.settings.interactionFrequency === "quiet" ? "selected" : ""}>安静</option><option value="normal" ${state.settings.interactionFrequency === "normal" ? "selected" : ""}>适中</option><option value="chatty" ${state.settings.interactionFrequency === "chatty" ? "selected" : ""}>活泼</option></select></label>
@@ -394,6 +426,11 @@ document.addEventListener("click", async (event) => {
     if (state.runtime.petVisible === false) await window.petdesk.setPetVisibility(true);
     await window.petdesk.petAction(target.dataset.petAction);
   }
+  if (target.dataset.petRandom !== undefined) {
+    if (state.runtime.petVisible === false) await window.petdesk.setPetVisibility(true);
+    const choices = ["pet", "play", "stretch", "walk", "celebrate"];
+    await window.petdesk.petAction(choices[Math.floor(Math.random() * choices.length)]);
+  }
   if (target.dataset.startFocus !== undefined) { navigate("focus"); window.petdesk.startFocus(1500); }
   if (target.dataset.petPlay !== undefined) window.petdesk.petAction("play");
   if (target.dataset.selectPet) {
@@ -403,8 +440,8 @@ document.addEventListener("click", async (event) => {
     if (target.dataset.petType) {
       next.settings.petType = target.dataset.petType;
       next.settings.petName = target.dataset.petName;
-      next.settings.bodyColor = target.dataset.body;
-      next.settings.accentColor = target.dataset.accent;
+      if (target.dataset.body) next.settings.bodyColor = target.dataset.body;
+      if (target.dataset.accent) next.settings.accentColor = target.dataset.accent;
     }
     await save(next);
     toast("已切换桌宠");

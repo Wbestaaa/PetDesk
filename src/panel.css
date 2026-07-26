@@ -116,6 +116,7 @@ h3 { margin: 0; font-size: 15px; }
 .hero-actions { display: flex; gap: 10px; margin-top: 19px; }
 .pet-portrait { position: relative; height: 210px; display: grid; place-items: center; }
 .pet-portrait canvas, .pet-portrait img { width: 220px; height: 220px; object-fit: contain; }
+.hero-emoji { position: relative; z-index: 1; font-size: 112px; filter: drop-shadow(0 12px 12px rgba(0,0,0,.16)); }
 .pet-portrait .orb { position: absolute; width: 150px; height: 150px; border-radius: 50%; background: #f1bd77; opacity: .16; }
 
 .button {
@@ -188,13 +189,54 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
 .custom-focus input:focus { border-color: var(--sage); }
 
 .pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-.pet-option { position: relative; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: #fffefa; cursor: pointer; }
+.pet-option { position: relative; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: #fffefa; cursor: pointer; transition: 160ms ease; }
+.pet-option:hover { border-color: #a8b7af; transform: translateY(-2px); box-shadow: 0 10px 24px rgba(43,55,49,.08); }
 .pet-option.active { border: 2px solid var(--sage); padding: 13px; }
-.pet-option .preview { height: 130px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: #eef1ec; }
+.pet-option .preview { height: 150px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: linear-gradient(145deg, #eef1ec, #f8f4ea); }
 .pet-option img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .procedural-pet { font-size: 73px; filter: drop-shadow(0 7px 8px rgba(0,0,0,.09)); }
 .pet-option b { display: block; margin-top: 11px; font-size: 13px; }
 .pet-option small { color: var(--muted); font-size: 10px; }
+.selected-mark {
+  position: absolute; z-index: 2; top: 22px; right: 22px; padding: 4px 8px;
+  border-radius: 999px; background: #30463d; color: white; font-size: 8px; font-weight: 800;
+}
+.pet-card-tags, .profile-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+.pet-card-tags span, .profile-tags span {
+  padding: 4px 7px; border-radius: 999px; background: var(--sage-soft);
+  color: #526c60; font-size: 8px; font-weight: 700;
+}
+
+.pet-profile {
+  min-height: 245px; display: grid; grid-template-columns: 250px minmax(260px, 1fr) 230px;
+  align-items: center; gap: 27px; overflow: hidden; position: relative;
+  background: linear-gradient(135deg, #fffdf8 45%, #edf3ef);
+}
+.pet-profile::after {
+  content: ""; position: absolute; right: -80px; top: -110px; width: 260px; height: 260px;
+  border-radius: 50%; background: rgba(111,141,128,.07);
+}
+.pet-profile-visual {
+  height: 205px; position: relative; z-index: 1; display: grid; place-items: center;
+  border-radius: 18px; background: radial-gradient(circle, #fff8ec 0 42%, #e3ece6 43% 70%, transparent 71%);
+}
+.pet-profile-visual img { width: 220px; height: 220px; object-fit: contain; }
+.pet-profile-copy { position: relative; z-index: 1; }
+.pet-profile-copy > small { color: var(--orange); font-size: 8px; font-weight: 900; letter-spacing: .16em; }
+.pet-profile-copy h2 { margin-top: 6px; font: 700 27px Georgia, "STSong", serif; }
+.pet-profile-copy > b { display: block; margin-top: 7px; color: var(--sage); font-size: 11px; }
+.pet-profile-copy p { max-width: 470px; margin: 10px 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.profile-actions { display: flex; gap: 8px; margin-top: 15px; }
+.interaction-cheatsheet {
+  position: relative; z-index: 1; display: grid; gap: 10px; padding: 16px;
+  border: 1px solid rgba(111,141,128,.2); border-radius: 15px; background: rgba(255,255,255,.66);
+}
+.interaction-cheatsheet > b { font-size: 11px; }
+.interaction-cheatsheet span { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 9px; }
+.interaction-cheatsheet i {
+  min-width: 58px; padding: 4px 6px; border-radius: 7px; background: #fff;
+  color: var(--ink); font-style: normal; font-weight: 700; text-align: center;
+}
 
 .builder { display: grid; grid-template-columns: 280px 1fr; gap: 22px; }
 .upload-zone {
@@ -209,9 +251,16 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
 .style-option.active { border-color: var(--sage); background: var(--sage-soft); }
 .style-option b { display: block; font-size: 12px; }
 .style-option small { color: var(--muted); font-size: 9px; line-height: 1.45; }
-.action-lab { display: grid; grid-template-columns: repeat(auto-fit, minmax(105px, 1fr)); gap: 8px; }
-.action-lab button { min-height: 48px; display: grid; place-items: center; align-content: center; gap: 2px; }
-.action-lab button small { color: var(--muted); font-size: 8px; font-weight: 400; }
+.action-subtitle { margin: 6px 0 0; font-size: 9px; }
+.action-lab { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); gap: 9px; }
+.action-button {
+  min-height: 84px; display: grid; place-items: center; align-content: center; gap: 3px;
+  border: 1px solid var(--line); border-radius: 13px; background: #fffefa; cursor: pointer; transition: 150ms ease;
+}
+.action-button:hover { border-color: var(--sage); background: var(--sage-soft); transform: translateY(-2px); }
+.action-button > span { font-size: 21px; }
+.action-button b { font-size: 11px; }
+.action-button small { color: var(--muted); font-size: 8px; font-weight: 400; }
 .action-note { margin: 12px 0 0; font-size: 9px; line-height: 1.6; }
 
 .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
@@ -226,6 +275,10 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
 .switch input:checked + .slider { background: var(--sage); }
 .switch input:checked + .slider::after { transform: translateX(18px); }
 .color-input { width: 34px; height: 30px; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.locked-style > span {
+  padding: 5px 8px; border-radius: 999px; background: var(--sage-soft);
+  color: var(--sage); font-size: 8px; font-weight: 800;
+}
 
 .habit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
 .habit-card { min-height: 160px; display: grid; align-content: space-between; }
@@ -288,6 +341,9 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
   body { grid-template-columns: 200px 1fr; }
   main { padding: 28px; }
   .grid.two, .focus-layout, .builder { grid-template-columns: 1fr; }
+  .pet-profile { grid-template-columns: 200px 1fr; }
+  .interaction-cheatsheet { grid-column: 1 / -1; grid-template-columns: repeat(2, 1fr); }
+  .action-lab { grid-template-columns: repeat(3, minmax(100px, 1fr)); }
   .hero-card { grid-template-columns: 1fr; }
   .pet-portrait { display: none; }
   .weather-strip { grid-template-columns: 1fr auto; }
