@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld("petdesk", {
   replaceState: (state) => ipcRenderer.invoke("state:replace", state),
   openPanel: () => ipcRenderer.invoke("panel:open"),
   petAction: (action) => ipcRenderer.invoke("pet:action", action),
+  rewardCompanion: (reason) => ipcRenderer.invoke("pet:reward", reason),
+  petDrag: (payload) => ipcRenderer.send("pet:drag", payload),
+  roamPet: (distance) => ipcRenderer.invoke("pet:roam", distance),
   setPetVisibility: (visible) => ipcRenderer.invoke("pet:visibility", visible),
   togglePet: () => ipcRenderer.invoke("pet:toggle"),
   quit: () => ipcRenderer.invoke("app:quit"),
@@ -19,4 +22,5 @@ contextBridge.exposeInMainWorld("petdesk", {
   onState: (callback) => ipcRenderer.on("state:changed", (_, state) => callback(state)),
   onPetAction: (callback) => ipcRenderer.on("pet:action", (_, action) => callback(action)),
   onPetSpeak: (callback) => ipcRenderer.on("pet:speak", (_, payload) => callback(payload)),
+  onCompanionReward: (callback) => ipcRenderer.on("pet:rewarded", (_, reward) => callback(reward)),
 });

@@ -6,6 +6,7 @@ const customPet = document.querySelector("#customPet");
 const actionPet = document.querySelector("#actionPet");
 const actionIndicator = document.querySelector("#actionIndicator");
 const reactionBurst = document.querySelector("#reactionBurst");
+const rewardToast = document.querySelector("#rewardToast");
 const petMenuTitle = document.querySelector("#petMenuTitle");
 const stage = document.querySelector("#stage");
 let state;
@@ -57,8 +58,8 @@ const poseForAction = {
 const actionLabels = {
   idle: "🌿 待机",
   pet: "🫳 摸摸",
-  walk: "🐾 行走",
-  stretch: "🐈 伸懒腰",
+  walk: "🚶 行走",
+  stretch: "🙆 伸展",
   play: "🪶 玩耍",
   feed: "🍪 吃饼干",
   study: "📖 认真读书",
@@ -85,7 +86,8 @@ function contextualLines(next) {
     context.push(`这次专注 ${Math.round(state.focus.duration / 60)} 分钟，我会安静陪你。`);
   }
   const personality = activeManifest?.speech?.[next] || [];
-  return [...personality, ...(lines[next] || []), ...context];
+  const generic = activeManifest?.character?.species === "human" ? [] : (lines[next] || []);
+  return [...personality, ...generic, ...context];
 }
 
 function resolveActionSource(next) {
@@ -143,6 +145,21 @@ function showReactionBurst() {
   reactionBurst.classList.remove("show");
   void reactionBurst.offsetWidth;
   reactionBurst.classList.add("show");
+}
+
+function displayReward(reward) {
+  if (!reward?.awarded) return reward;
+  rewardToast.textContent = reward.leveledUp
+    ? `默契升级 · Lv.${reward.level}`
+    : `默契 +${reward.points}`;
+  rewardToast.classList.remove("show");
+  void rewardToast.offsetWidth;
+  rewardToast.classList.add("show");
+  return reward;
+}
+
+async function showReward(reason) {
+  return window.petdesk.rewardCompanion(reason);
 }
 
 function setAction(next, duration = actionPatterns.actionDuration(next), silent = false) {
@@ -483,7 +500,9 @@ stage.addEventListener("pointerup", (event) => {
       setAction("celebrate", 1500);
     } else {
       setAction("idle", actionPatterns.actionDuration("idle"), true);
+      speak("这个位置不错，我就在这里陪你。");
     }
+    showReward("drag");
   }
   stage.classList.remove("dragging");
   dragState = null;
@@ -512,6 +531,7 @@ stage.addEventListener("click", (event) => {
   lastTap = now;
   showReactionBurst();
   setAction("pet", 1800);
+  showReward("pet");
 });
 stage.addEventListener("contextmenu", (event) => {
   event.preventDefault();
@@ -529,6 +549,7 @@ menu.addEventListener("click", (event) => {
     const next = choices[Math.floor(Math.random() * choices.length)];
     showReactionBurst();
     setAction(next);
+    showReward("random");
   }
   else if (button.dataset.chat !== undefined) {
     const choices = contextualLines("idle");
@@ -537,7 +558,11 @@ menu.addEventListener("click", (event) => {
     speak(lastLine, 5200);
     setAction("idle", 2400, true);
   }
-  else setAction(button.dataset.action, button.dataset.action === "study" ? 12_000 : actionPatterns.actionDuration(button.dataset.action));
+  else {
+    const nextAction = button.dataset.action;
+    setAction(nextAction, nextAction === "study" ? 12_000 : actionPatterns.actionDuration(nextAction));
+    if (["pet", "play", "stretch"].includes(nextAction)) showReward(nextAction);
+  }
 });
 window.addEventListener("click", (event) => {
   if (!event.target.closest(".pet-menu")) menu.classList.remove("show");
@@ -553,6 +578,7 @@ window.petdesk.onPetSpeak(({ text, action: next }) => {
   if (next) setAction(next);
   speak(text, 5600);
 });
+window.petdesk.onCompanionReward(displayReward);
 setInterval(async () => {
   if (action !== "idle" || state?.focus?.running || document.hidden || dragState || menu.classList.contains("show")) return;
   const frequency = state?.settings?.interactionFrequency || "normal";

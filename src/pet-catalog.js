@@ -20,13 +20,13 @@
     {
       id: "huahua",
       folder: "huahua",
-      type: "cat",
+      type: "human",
       name: "毕业花花",
       kind: "action-art",
       icon: "../assets/pets/huahua/actions/idle.webp",
-      note: "毕业猫猫 · 温柔坚定",
-      description: "戴花饰学士帽、抱着毕业花束，陪你完成每一个小目标。",
-      tags: ["9 个动作", "毕业主题", "专属回复"],
+      note: "Q 版毕业女孩 · 温柔坚定",
+      description: "由毕业照片卡通化而来，戴花饰学士帽、抱着毕业花束，陪你完成每一个小目标。",
+      tags: ["9 个动作", "人物卡通化", "专属回复"],
     },
     {
       id: "doubao",

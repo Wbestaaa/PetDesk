@@ -11,7 +11,13 @@ const {
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-const { DEFAULT_STATE, clampFocusMinutes, normalizeState, nextDueAlarm } = require("./src/state");
+const {
+  DEFAULT_STATE,
+  applyCompanionReward,
+  clampFocusMinutes,
+  normalizeState,
+  nextDueAlarm,
+} = require("./src/state");
 const { normalizeLocation, parseForecast } = require("./src/weather");
 
 let petWindow;
@@ -20,6 +26,18 @@ let tray;
 let appState;
 let statePath;
 let scheduler;
+const rewardCooldowns = new Map();
+
+const REWARD_COOLDOWN_MS = Object.freeze({
+  pet: 1800,
+  play: 6000,
+  stretch: 8000,
+  drag: 10000,
+  random: 6000,
+  todo: 0,
+  habit: 0,
+  focus: 0,
+});
 let petDragging = false;
 let dragOffset = { x: 0, y: 0 };
 let positionPersistTimer;
@@ -93,6 +111,37 @@ function updateState(updater) {
   scheduleNextAlarm();
   broadcastState();
   return appState;
+}
+
+function rewardCompanion(reason) {
+  if (!Object.hasOwn(REWARD_COOLDOWN_MS, reason)) {
+    return { awarded: false, points: 0, reason };
+  }
+  const now = Date.now();
+  const previousAt = rewardCooldowns.get(reason) || 0;
+  const cooldown = REWARD_COOLDOWN_MS[reason];
+  if (cooldown && now - previousAt < cooldown) {
+    return { awarded: false, points: 0, reason, cooldownRemaining: cooldown - (now - previousAt) };
+  }
+  rewardCooldowns.set(reason, now);
+  let reward;
+  updateState((state) => {
+    const result = applyCompanionReward(state.companion, reason, new Date(now));
+    state.companion = result.companion;
+    if (["pet", "play", "stretch", "drag", "random"].includes(reason)) {
+      state.stats.interactions += 1;
+    }
+    reward = result.reward;
+    return state;
+  });
+  petWindow?.webContents.send("pet:rewarded", reward);
+  if (reward?.leveledUp) {
+    petWindow?.webContents.send("pet:speak", {
+      text: `我们的默契升到 ${reward.level} 级啦，谢谢你一直陪着我。`,
+      action: "celebrate",
+    });
+  }
+  return reward;
 }
 
 function petBounds() {
@@ -353,6 +402,7 @@ function registerIpc() {
   ipcMain.handle("panel:open", () => createPanelWindow());
   ipcMain.handle("pet:menu", () => createPanelWindow());
   ipcMain.handle("pet:action", (_, action) => petWindow?.webContents.send("pet:action", action));
+  ipcMain.handle("pet:reward", (_, reason) => rewardCompanion(String(reason || "")));
   ipcMain.on("pet:drag", (_, payload = {}) => {
     if (!petWindow || petWindow.isDestroyed() || appState.settings.clickThrough) return;
     if (payload.phase === "start") {
@@ -401,6 +451,7 @@ function registerIpc() {
       state.focus.totalMinutes += Math.round(state.focus.duration / 60);
       return state;
     });
+    rewardCompanion("focus");
     notify("专注完成", "做得很好！起来活动一下吧。", "celebrate");
   });
   ipcMain.handle("image:pick", async () => {
@@ -437,7 +488,7 @@ function registerIpc() {
     const key = process.env.OPENAI_API_KEY;
     if (!key) throw new Error("未检测到 OPENAI_API_KEY。请先在 Windows 环境变量中配置后重启 PetDesk。");
     const prompts = {
-      chibi: "Transform the subject into a polished cute chibi desktop-pet character with a large expressive head, compact body, clean silhouette and plain neutral background.",
+      chibi: "Cartoonize the subject as a polished cute chibi desktop-pet illustration with a large expressive head, compact body, clean silhouette and plain neutral background. Preserve the subject's identity, species, facial features, hair, clothing and key accessories. A human subject must remain unmistakably human with human anatomy and no animal ears, paws, tail, muzzle or fur.",
       realistic: "Transform the subject into a charming realistic desktop-pet portrait, preserving identity and key markings, centered with a clean plain background.",
       watercolor: "Transform the subject into a soft hand-painted watercolor desktop-pet illustration, clean silhouette, centered, plain background.",
     };

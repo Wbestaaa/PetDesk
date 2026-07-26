@@ -8,10 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added “毕业花花” as a selectable cream-white graduation cat with nine transparent action poses and character-specific replies.
+- Added “毕业花花” as a selectable Q-version human cartoonization of the supplied graduation photo, with nine transparent action poses and character-specific replies.
 - Added a central built-in pet catalog and manifest-driven action images, fallbacks, preloading, and dialogue.
 - Added fast-drag celebration feedback, reaction particles, grouped right-click actions, random interaction, and reminder preview.
 - Added a current-companion profile, interaction guide, richer pet cards, and nine-action preview lab to the pet selection page.
+- Added a cooldown-aware companion bond loop: direct interaction gives immediate feedback, while Todo, habit, and focus completion grant larger persistent rewards and level-ups.
 
 ### Changed
 
@@ -21,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Redesigned “毕业花花” with an unmistakable cat head, ears, muzzle, whiskers, four paws, and tail; black is now limited to her long hair, mortarboard, and short academic cape instead of covering the body.
+- Corrected “毕业花花” from an incorrectly inferred cat into a consistent chibi human graduate based on the source photo, with visible human face, arms, hands, legs, and shoes; black now reads as graduation clothing instead of a body silhouette.
 
 ## [0.2.0] - 2026-07-26
 

@@ -114,6 +114,18 @@ h3 { margin: 0; font-size: 15px; }
 .hero-card h2 { max-width: 380px; font: 700 25px/1.35 Georgia, "STSong", serif; }
 .hero-card p { max-width: 410px; color: #bdccc5; font-size: 13px; line-height: 1.7; }
 .hero-actions { display: flex; gap: 10px; margin-top: 19px; }
+.bond-mini { max-width: 390px; display: grid; gap: 5px; margin-top: 18px; }
+.bond-mini > div, .bond-progress > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.bond-mini b { color: #f8fbf8; font-size: 10px; }
+.bond-mini span, .bond-mini small { color: #bfcfc7; font-size: 9px; }
+.bond-mini > i, .bond-progress > i {
+  height: 6px; overflow: hidden; display: block; border-radius: 999px;
+  background: rgba(255,255,255,.14); font-style: normal;
+}
+.bond-mini > i > span, .bond-progress > i > span {
+  height: 100%; display: block; border-radius: inherit;
+  background: linear-gradient(90deg, #ef9d63, #f5c273); transition: width .25s ease;
+}
 .pet-portrait { position: relative; height: 210px; display: grid; place-items: center; }
 .pet-portrait canvas, .pet-portrait img { width: 220px; height: 220px; object-fit: contain; }
 .hero-emoji { position: relative; z-index: 1; font-size: 112px; filter: drop-shadow(0 12px 12px rgba(0,0,0,.16)); }
@@ -227,6 +239,10 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
 .pet-profile-copy > b { display: block; margin-top: 7px; color: var(--sage); font-size: 11px; }
 .pet-profile-copy p { max-width: 470px; margin: 10px 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .profile-actions { display: flex; gap: 8px; margin-top: 15px; }
+.bond-progress { max-width: 430px; display: grid; gap: 6px; margin-top: 13px; }
+.bond-progress b { color: var(--ink); font-size: 10px; }
+.bond-progress > div > span, .bond-progress small { color: var(--muted); font-size: 9px; }
+.bond-progress > i { background: #e7e6df; }
 .interaction-cheatsheet {
   position: relative; z-index: 1; display: grid; gap: 10px; padding: 16px;
   border: 1px solid rgba(111,141,128,.2); border-radius: 15px; background: rgba(255,255,255,.66);
@@ -236,6 +252,9 @@ label.field-label { display: grid; gap: 7px; color: #526159; font-size: 11px; fo
 .interaction-cheatsheet i {
   min-width: 58px; padding: 4px 6px; border-radius: 7px; background: #fff;
   color: var(--ink); font-style: normal; font-weight: 700; text-align: center;
+}
+.interaction-cheatsheet .reward-rule {
+  margin-top: 2px; padding-top: 9px; border-top: 1px solid rgba(111,141,128,.16);
 }
 
 .builder { display: grid; grid-template-columns: 280px 1fr; gap: 22px; }

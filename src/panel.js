@@ -15,6 +15,7 @@ const pageTitles = {
   settings: "按照你的方式陪伴",
 };
 const petCatalog = window.PetCatalog;
+const BOND_XP_PER_LEVEL = 40;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -25,6 +26,23 @@ const today = () => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
   return local.toISOString().slice(0, 10);
 };
+
+function bondTitle(level) {
+  if (level >= 5) return "毕业搭档";
+  if (level === 4) return "亲密伙伴";
+  if (level === 3) return "很有默契";
+  if (level === 2) return "逐渐熟悉";
+  return "刚刚认识";
+}
+
+function bondProgress(companion = {}) {
+  const xp = Math.max(0, Number(companion.bondXp) || 0);
+  return {
+    level: Math.max(1, Math.floor(xp / BOND_XP_PER_LEVEL) + 1),
+    points: xp % BOND_XP_PER_LEVEL,
+    percent: ((xp % BOND_XP_PER_LEVEL) / BOND_XP_PER_LEVEL) * 100,
+  };
+}
 
 function escapeHtml(value = "") {
   return String(value)
@@ -84,13 +102,19 @@ function homeTemplate() {
       : `<span class="hero-emoji">${builtInPortrait.emoji}</span>`;
   const weather = state.weather?.current;
   const weatherLocation = state.weather?.location;
+  const bond = bondProgress(state.companion);
   return `<div class="grid two">
     <div class="card hero-card">
       <div>
         <small style="color:#f4b57f">YOUR GENTLE COMPANION</small>
         <h2>${escapeHtml(state.settings.petName)}已经准备好陪你开始今天</h2>
         <p>把任务分成一个个小步骤。专注的时候，它会安静看书；完成的时候，它会和你一起庆祝。</p>
-        <div class="hero-actions"><button class="button orange" data-start-focus>开始专注</button><button class="button ghost" style="color:#fff;border-color:#708279" data-pet-play>和它玩一会儿</button></div>
+        <div class="hero-actions"><button class="button orange" data-start-focus>开始专注</button><button class="button ghost" style="color:#fff;border-color:#708279" data-pet-play data-reward="play">和它玩一会儿</button></div>
+        <div class="bond-mini">
+          <div><b>默契 Lv.${bond.level} · ${bondTitle(bond.level)}</b><span>${bond.points}/${BOND_XP_PER_LEVEL}</span></div>
+          <i><span style="width:${bond.percent}%"></span></i>
+          <small>互动获得即时反馈，完成待办和专注会成长得更快。</small>
+        </div>
       </div>
       <div class="pet-portrait"><span class="orb"></span>${portrait}</div>
     </div>
@@ -147,7 +171,7 @@ function petsTemplate() {
   const customCards = state.customPets.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}" data-select-pet="${pet.id}">
     <div class="preview"><img src="${pet.dataUrl}" alt=""></div><b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · 自定义</small></div>`).join("");
   const actionButtons = [
-    ["idle", "🌿", "待机", "呼吸与陪伴"], ["walk", "🐾", "行走", "拖动与巡视"],
+    ["idle", "🌿", "待机", "呼吸与陪伴"], ["walk", "🚶", "行走", "拖动与巡视"],
     ["pet", "🫳", "抚摸", "点击反馈"], ["stretch", "↗", "伸懒腰", "久坐放松"],
     ["play", "🪶", "玩耍", "短暂休息"], ["study", "📖", "读书", "专注陪伴"],
     ["sleep", "🌙", "睡觉", "安静模式"], ["celebrate", "🎉", "庆祝", "任务完成"],
@@ -156,6 +180,8 @@ function petsTemplate() {
   const activeVisual = activePet.icon
     ? `<img src="${activePet.icon}" alt="${escapeHtml(activePet.name)}">`
     : `<span class="procedural-pet">${activePet.emoji || "🐾"}</span>`;
+  const petPronoun = activePet.type === "human" ? "她" : "它";
+  const bond = bondProgress(state.companion);
   return `<div class="card pet-profile">
     <div class="pet-profile-visual">${activeVisual}</div>
     <div class="pet-profile-copy">
@@ -164,12 +190,18 @@ function petsTemplate() {
       <b>${escapeHtml(activePet.note || "")}</b>
       <p>${escapeHtml(activePet.description || "")}</p>
       <div class="profile-tags">${(activePet.tags || []).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
-      <div class="profile-actions"><button class="button" data-pet-action="pet">摸摸它</button><button class="button ghost" data-pet-random>随机互动</button></div>
+      <div class="bond-progress">
+        <div><b>默契 Lv.${bond.level} · ${bondTitle(bond.level)}</b><span>${bond.points}/${BOND_XP_PER_LEVEL}</span></div>
+        <i><span style="width:${bond.percent}%"></span></i>
+        <small>今日获得 ${state.companion?.todayPoints || 0} 点默契</small>
+      </div>
+      <div class="profile-actions"><button class="button" data-pet-action="pet" data-reward="pet">摸摸${petPronoun}</button><button class="button ghost" data-pet-random data-reward="random">随机互动</button></div>
     </div>
     <div class="interaction-cheatsheet">
       <b>桌面交互</b>
       <span><i>单击</i> 抚摸回应</span><span><i>拖动</i> 行走与换位</span>
       <span><i>快速放手</i> 惊喜庆祝</span><span><i>右键</i> 完整动作菜单</span>
+      <span class="reward-rule"><i>正反馈</i> 完成任务与专注增加默契</span>
     </div>
   </div>
   <div class="card" style="margin-top:18px">
@@ -425,14 +457,26 @@ document.addEventListener("click", async (event) => {
   if (target.dataset.petAction) {
     if (state.runtime.petVisible === false) await window.petdesk.setPetVisibility(true);
     await window.petdesk.petAction(target.dataset.petAction);
+    if (target.dataset.reward) {
+      const reward = await window.petdesk.rewardCompanion(target.dataset.reward);
+      if (reward?.awarded) toast(reward.leveledUp ? `默契升级到 Lv.${reward.level}` : `默契 +${reward.points}`);
+    }
   }
   if (target.dataset.petRandom !== undefined) {
     if (state.runtime.petVisible === false) await window.petdesk.setPetVisibility(true);
     const choices = ["pet", "play", "stretch", "walk", "celebrate"];
     await window.petdesk.petAction(choices[Math.floor(Math.random() * choices.length)]);
+    if (target.dataset.reward) {
+      const reward = await window.petdesk.rewardCompanion("random");
+      if (reward?.awarded) toast(reward.leveledUp ? `默契升级到 Lv.${reward.level}` : `默契 +${reward.points}`);
+    }
   }
   if (target.dataset.startFocus !== undefined) { navigate("focus"); window.petdesk.startFocus(1500); }
-  if (target.dataset.petPlay !== undefined) window.petdesk.petAction("play");
+  if (target.dataset.petPlay !== undefined) {
+    await window.petdesk.petAction("play");
+    const reward = await window.petdesk.rewardCompanion("play");
+    if (reward?.awarded) toast(`默契 +${reward.points}`);
+  }
   if (target.dataset.selectPet) {
     const next = clone(state);
     next.settings.activePet = target.dataset.selectPet;
@@ -486,11 +530,20 @@ document.addEventListener("click", async (event) => {
     const itemId = target.closest("[data-id]").dataset.id;
     const next = clone(state);
     const task = next.todos.find((item) => item.id === itemId);
+    let completed = false;
     if (task) {
       task.done = !task.done;
-      if (task.done) { next.stats.completedTodos += 1; window.petdesk.petAction("celebrate"); }
+      if (task.done) {
+        completed = true;
+        next.stats.completedTodos += 1;
+        window.petdesk.petAction("celebrate");
+      }
     }
     await save(next);
+    if (completed) {
+      const reward = await window.petdesk.rewardCompanion("todo");
+      if (reward?.awarded) toast(`任务完成 · 默契 +${reward.points}`);
+    }
   }
   if (target.dataset.delete !== undefined) {
     const itemId = target.closest("[data-id]").dataset.id;
@@ -545,9 +598,18 @@ document.addEventListener("click", async (event) => {
     const habitId = target.closest("[data-id]").dataset.id;
     const next = clone(state);
     const habit = next.habits.find((item) => item.id === habitId);
-    if (habit && habit.checkedDate !== today()) { habit.checkedDate = today(); habit.streak += 1; }
+    let checked = false;
+    if (habit && habit.checkedDate !== today()) {
+      checked = true;
+      habit.checkedDate = today();
+      habit.streak += 1;
+    }
     await save(next);
     window.petdesk.petAction("celebrate");
+    if (checked) {
+      const reward = await window.petdesk.rewardCompanion("habit");
+      if (reward?.awarded) toast(`打卡完成 · 默契 +${reward.points}`);
+    }
   }
   if (target.id === "addHabit") {
     const title = $("#habitInput").value.trim();
