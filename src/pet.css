@@ -48,6 +48,7 @@ canvas,
 .custom-pet {
   display: none;
   transform-origin: 50% 90%;
+  transform: scaleX(var(--direction-scale, 1));
 }
 
 .bubble {
@@ -122,24 +123,67 @@ canvas,
 }
 
 .custom-pet.celebrate,
-.custom-pet.play {
+.custom-pet.play,
+.custom-pet.group-emotion {
   animation: celebrate 0.7s ease-in-out 3;
 }
 
+.custom-pet.stretch {
+  animation: stretch 1.6s ease-in-out 2;
+}
+
+.custom-pet.feed,
+.custom-pet.pet {
+  animation: nod 0.52s ease-in-out 5;
+}
+
+.custom-pet.study {
+  animation: study 2.4s ease-in-out infinite;
+}
+
+.custom-pet.alert {
+  animation: alert 0.32s ease-in-out 10;
+}
+
+.custom-pet.dir-w,
+.custom-pet.dir-wsw,
+.custom-pet.dir-wnw,
+.custom-pet.dir-sw,
+.custom-pet.dir-nw {
+  --direction-scale: -1;
+}
+
 @keyframes breathe {
-  50% { transform: translateY(-3%) scale(1.025, 0.98); }
+  50% { transform: translateY(-3%) scaleX(var(--direction-scale, 1)) scale(1.025, 0.98); }
 }
 
 @keyframes walk {
-  25% { transform: translate(-2%, -2%) rotate(-2deg); }
-  75% { transform: translate(2%, 0) rotate(2deg); }
+  25% { transform: translate(-2%, -2%) rotate(-2deg) scaleX(var(--direction-scale, 1)); }
+  75% { transform: translate(2%, 0) rotate(2deg) scaleX(var(--direction-scale, 1)); }
 }
 
 @keyframes sleep {
-  50% { transform: translateY(1%) scale(1.02, 0.98) rotate(1deg); }
+  50% { transform: translateY(1%) scaleX(var(--direction-scale, 1)) scale(1.02, 0.98) rotate(1deg); }
 }
 
 @keyframes celebrate {
-  40% { transform: translateY(-10%) rotate(-5deg); }
-  70% { transform: translateY(-4%) rotate(5deg); }
+  40% { transform: translateY(-10%) rotate(-5deg) scaleX(var(--direction-scale, 1)); }
+  70% { transform: translateY(-4%) rotate(5deg) scaleX(var(--direction-scale, 1)); }
+}
+
+@keyframes stretch {
+  50% { transform: translateY(4%) scaleX(var(--direction-scale, 1)) scale(1.1, .88); }
+}
+
+@keyframes nod {
+  50% { transform: translateY(3%) rotate(2deg) scaleX(var(--direction-scale, 1)); }
+}
+
+@keyframes study {
+  50% { transform: translateY(-1.5%) rotate(-.7deg) scaleX(var(--direction-scale, 1)); }
+}
+
+@keyframes alert {
+  25% { transform: translateX(-2%) rotate(-2deg) scaleX(var(--direction-scale, 1)); }
+  75% { transform: translateX(2%) rotate(2deg) scaleX(var(--direction-scale, 1)); }
 }

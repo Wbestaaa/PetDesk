@@ -14,7 +14,7 @@ const DEFAULT_STATE = {
     accentColor: "#fff0d6",
     interactionFrequency: "normal",
   },
-  runtime: { petPosition: null },
+  runtime: { petPosition: null, petVisible: true },
   customPets: [],
   todos: [
     { id: "welcome-1", title: "体验一次 25 分钟专注", done: false, priority: "high", due: "" },
@@ -29,6 +29,13 @@ const DEFAULT_STATE = {
     remaining: 25 * 60,
     sessions: 0,
     totalMinutes: 0,
+  },
+  weather: {
+    location: null,
+    updatedAt: null,
+    current: null,
+    days: [],
+    timezone: null,
   },
   habits: [
     { id: "water", title: "喝水", streak: 0, checkedDate: "" },
@@ -45,12 +52,19 @@ function normalizeState(input) {
     settings: { ...DEFAULT_STATE.settings, ...(source.settings || {}) },
     runtime: { ...DEFAULT_STATE.runtime, ...(source.runtime || {}) },
     focus: { ...DEFAULT_STATE.focus, ...(source.focus || {}) },
+    weather: { ...DEFAULT_STATE.weather, ...(source.weather || {}) },
     stats: { ...DEFAULT_STATE.stats, ...(source.stats || {}) },
     todos: Array.isArray(source.todos) ? source.todos : structuredClone(DEFAULT_STATE.todos),
     alarms: Array.isArray(source.alarms) ? source.alarms : [],
     habits: Array.isArray(source.habits) ? source.habits : structuredClone(DEFAULT_STATE.habits),
     customPets: Array.isArray(source.customPets) ? source.customPets : [],
   };
+}
+
+function clampFocusMinutes(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return 25;
+  return Math.min(240, Math.max(1, Math.round(minutes)));
 }
 
 function parseTime(value) {
@@ -82,4 +96,4 @@ function nextDueAlarm(alarms, now) {
   return candidates[0] || null;
 }
 
-module.exports = { DEFAULT_STATE, normalizeState, nextDueAlarm };
+module.exports = { DEFAULT_STATE, clampFocusMinutes, normalizeState, nextDueAlarm };

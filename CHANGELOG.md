@@ -6,12 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Planned
+## [0.2.0] - 2026-07-26
 
-- Sprite-sheet import and action editor.
-- Multi-monitor movement and edge interactions.
-- Optional weather, calendar, and music integrations.
-- Additional accessibility and localization settings.
+### Added
+
+- PetDesk standard action pattern v1 with nine action groups and 16 directions.
+- Reusable custom-pet package documentation and runtime action metadata.
+- Custom focus durations from 1 to 240 minutes.
+- City-based current weather and four-day forecast powered by Open-Meteo.
+- Weather and action-pattern unit tests.
+
+### Changed
+
+- Improved the control-center header, action lab, focus controls, weather layout, and responsive details.
+- Made the tray left-click behavior context-aware.
+
+### Fixed
+
+- Replaced the one-way hide button with a visible status toggle that can restore the pet.
+- Kept the tray menu label synchronized with the saved pet visibility state.
+- Honored the `--hidden` launch argument for the control-center window.
 
 ## [0.1.1] - 2026-07-26
 
@@ -29,5 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Replaced Chinese launcher contents with ASCII-compatible commands to prevent Windows CMD encoding failures.
 
-[Unreleased]: https://github.com/Wbestaaa/PetDesk/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Wbestaaa/PetDesk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Wbestaaa/PetDesk/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Wbestaaa/PetDesk/releases/tag/v0.1.1

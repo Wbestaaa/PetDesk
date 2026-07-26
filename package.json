@@ -1,6 +1,6 @@
 {
   "name": "petdesk",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A customizable Windows 11 desktop pet and focus companion.",
   "main": "main.js",
   "author": "PetDesk",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node tests/state.test.js",
+    "test": "node tests/state.test.js && node tests/actions.test.js && node tests/weather.test.js",
     "pack:win": "electron-builder --win nsis portable --publish never",
     "pack:dir": "electron-builder --dir"
   },

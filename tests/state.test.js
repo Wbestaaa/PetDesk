@@ -1,10 +1,16 @@
 const assert = require("node:assert/strict");
-const { normalizeState, nextDueAlarm } = require("../src/state");
+const { clampFocusMinutes, normalizeState, nextDueAlarm } = require("../src/state");
 
 const normalized = normalizeState({ settings: { petName: "Test" }, todos: [] });
 assert.equal(normalized.settings.petName, "Test");
 assert.equal(normalized.settings.alwaysOnTop, true);
 assert.deepEqual(normalized.todos, []);
+assert.equal(normalized.runtime.petVisible, true);
+assert.deepEqual(normalized.weather.days, []);
+assert.equal(clampFocusMinutes("90"), 90);
+assert.equal(clampFocusMinutes(0), 1);
+assert.equal(clampFocusMinutes(999), 240);
+assert.equal(clampFocusMinutes("not-a-number"), 25);
 
 const now = new Date(2026, 6, 26, 10, 0, 0);
 const due = nextDueAlarm(

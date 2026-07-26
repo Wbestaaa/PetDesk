@@ -11,7 +11,8 @@ const {
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
-const { DEFAULT_STATE, normalizeState, nextDueAlarm } = require("./src/state");
+const { DEFAULT_STATE, clampFocusMinutes, normalizeState, nextDueAlarm } = require("./src/state");
+const { normalizeLocation, parseForecast } = require("./src/weather");
 
 let petWindow;
 let panelWindow;
@@ -21,6 +22,7 @@ let statePath;
 let scheduler;
 
 const isDev = process.argv.includes("--dev");
+const launchHidden = process.argv.includes("--hidden");
 
 function loadState() {
   statePath = path.join(app.getPath("userData"), "petdesk-state.json");
@@ -40,6 +42,43 @@ function broadcastState() {
   for (const win of [petWindow, panelWindow]) {
     if (win && !win.isDestroyed()) win.webContents.send("state:changed", appState);
   }
+}
+
+function refreshTrayMenu() {
+  if (!tray || tray.isDestroyed()) return;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "打开控制中心", click: createPanelWindow },
+      {
+        label: appState.runtime.petVisible ? "隐藏桌宠" : "显示桌宠",
+        click: () => setPetVisibility(!appState.runtime.petVisible),
+      },
+      { type: "separator" },
+      { label: "开始 25 分钟专注", click: () => startFocus(25 * 60) },
+      { label: "让桌宠休息", click: () => petWindow?.webContents.send("pet:action", "sleep") },
+      { type: "separator" },
+      {
+        label: "退出 PetDesk",
+        click: () => {
+          app.isQuitting = true;
+          app.quit();
+        },
+      },
+    ])
+  );
+}
+
+function setPetVisibility(visible) {
+  const nextVisible = Boolean(visible);
+  appState.runtime.petVisible = nextVisible;
+  persistState();
+  if (petWindow && !petWindow.isDestroyed()) {
+    if (nextVisible) petWindow.showInactive();
+    else petWindow.hide();
+  }
+  refreshTrayMenu();
+  broadcastState();
+  return nextVisible;
 }
 
 function updateState(updater) {
@@ -84,7 +123,9 @@ function createPetWindow() {
   });
   petWindow.setAlwaysOnTop(appState.settings.alwaysOnTop, "floating");
   petWindow.loadFile(path.join(__dirname, "src", "pet.html"));
-  petWindow.once("ready-to-show", () => petWindow.showInactive());
+  petWindow.once("ready-to-show", () => {
+    if (appState.runtime.petVisible !== false) petWindow.showInactive();
+  });
   petWindow.on("moved", () => {
     if (!petWindow || petWindow.isDestroyed()) return;
     appState.runtime.petPosition = petWindow.getPosition().reduce(
@@ -145,35 +186,13 @@ function trayIcon() {
 
 function createTray() {
   tray = new Tray(trayIcon().resize({ width: 20, height: 20 }));
-  tray.setToolTip("PetDesk");
-  const refreshMenu = () => {
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "打开控制中心", click: createPanelWindow },
-        {
-          label: petWindow?.isVisible() ? "隐藏桌宠" : "显示桌宠",
-          click: () => (petWindow?.isVisible() ? petWindow.hide() : petWindow?.showInactive()),
-        },
-        { type: "separator" },
-        {
-          label: "开始 25 分钟专注",
-          click: () => startFocus(25 * 60),
-        },
-        { label: "让桌宠休息", click: () => petWindow?.webContents.send("pet:action", "sleep") },
-        { type: "separator" },
-        {
-          label: "退出 PetDesk",
-          click: () => {
-            app.isQuitting = true;
-            app.quit();
-          },
-        },
-      ])
-    );
-  };
-  refreshMenu();
-  tray.on("click", createPanelWindow);
-  tray.on("right-click", refreshMenu);
+  tray.setToolTip("PetDesk · 左键恢复桌宠 / 打开控制中心");
+  refreshTrayMenu();
+  tray.on("click", () => {
+    if (!appState.runtime.petVisible) setPetVisibility(true);
+    else createPanelWindow();
+  });
+  tray.on("right-click", refreshTrayMenu);
 }
 
 function applyWindowSettings() {
@@ -209,15 +228,69 @@ function scheduleNextAlarm() {
 }
 
 function startFocus(seconds) {
+  const safeSeconds = clampFocusMinutes(Number(seconds) / 60) * 60;
   const now = Date.now();
   updateState((state) => {
     state.focus.running = true;
     state.focus.startedAt = now;
-    state.focus.endsAt = now + seconds * 1000;
-    state.focus.duration = seconds;
+    state.focus.endsAt = now + safeSeconds * 1000;
+    state.focus.duration = safeSeconds;
+    state.focus.remaining = safeSeconds;
     return state;
   });
-  petWindow?.webContents.send("pet:action", "study");
+  petWindow?.webContents.send("pet:action", { action: "study", durationMs: safeSeconds * 1000 });
+}
+
+async function fetchJson(url, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": `PetDesk/${app.getVersion()}` },
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.reason || `天气服务请求失败 (${response.status})`);
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("天气服务响应超时，请稍后重试");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function loadWeather(query) {
+  let location = appState.weather.location;
+  if (String(query || "").trim()) {
+    const geocodingUrl = new URL("https://geocoding-api.open-meteo.com/v1/search");
+    geocodingUrl.search = new URLSearchParams({
+      name: String(query).trim(),
+      count: "1",
+      language: "zh",
+      format: "json",
+    }).toString();
+    const geocoding = await fetchJson(geocodingUrl);
+    if (!geocoding.results?.length) throw new Error("没有找到这个城市，请尝试输入城市全名");
+    location = normalizeLocation(geocoding.results[0]);
+  }
+  if (!location) throw new Error("请先输入城市");
+
+  const forecastUrl = new URL("https://api.open-meteo.com/v1/forecast");
+  forecastUrl.search = new URLSearchParams({
+    latitude: String(location.latitude),
+    longitude: String(location.longitude),
+    current: "temperature_2m,apparent_temperature,relative_humidity_2m,is_day,weather_code,wind_speed_10m",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    timezone: "auto",
+    forecast_days: "4",
+  }).toString();
+  const forecast = parseForecast(await fetchJson(forecastUrl), location);
+  updateState((state) => {
+    state.weather = forecast;
+    return state;
+  });
+  return forecast;
 }
 
 function registerIpc() {
@@ -226,22 +299,25 @@ function registerIpc() {
   ipcMain.handle("panel:open", () => createPanelWindow());
   ipcMain.handle("pet:menu", () => createPanelWindow());
   ipcMain.handle("pet:action", (_, action) => petWindow?.webContents.send("pet:action", action));
-  ipcMain.handle("pet:hide", () => petWindow?.hide());
+  ipcMain.handle("pet:visibility", (_, visible) => setPetVisibility(visible));
+  ipcMain.handle("pet:toggle", () => setPetVisibility(!appState.runtime.petVisible));
   ipcMain.handle("app:quit", () => {
     app.isQuitting = true;
     app.quit();
   });
   ipcMain.handle("focus:start", (_, seconds) => startFocus(seconds));
-  ipcMain.handle("focus:pause", () =>
-    updateState((state) => {
+  ipcMain.handle("focus:pause", () => {
+    const result = updateState((state) => {
       if (state.focus.running) {
         state.focus.remaining = Math.max(0, Math.round((state.focus.endsAt - Date.now()) / 1000));
       }
       state.focus.running = false;
       state.focus.endsAt = null;
       return state;
-    })
-  );
+    });
+    petWindow?.webContents.send("pet:action", { action: "idle", silent: true });
+    return result;
+  });
   ipcMain.handle("focus:complete", () => {
     updateState((state) => {
       state.focus.running = false;
@@ -311,13 +387,14 @@ function registerIpc() {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled), args: ["--hidden"] });
     return app.getLoginItemSettings().openAtLogin;
   });
+  ipcMain.handle("weather:load", (_, query) => loadWeather(query));
 }
 
 app.whenReady().then(() => {
   loadState();
   registerIpc();
   createPetWindow();
-  createPanelWindow();
+  if (!launchHidden) createPanelWindow();
   createTray();
   scheduleNextAlarm();
   app.on("activate", createPanelWindow);

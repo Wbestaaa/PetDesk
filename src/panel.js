@@ -3,6 +3,7 @@ let currentPage = "home";
 let pickedImage;
 let selectedStyle = "pixel";
 let timerInterval;
+let weatherLoading = false;
 const pageTitles = {
   home: "早上好，今天想完成什么？",
   pets: "打造属于你的桌面伙伴",
@@ -10,6 +11,7 @@ const pageTitles = {
   todos: "清空脑海，一件件完成",
   alarms: "让提醒温柔地准时出现",
   habits: "小习惯会长成大变化",
+  weather: "出门前，先看看今天的天空",
   settings: "按照你的方式陪伴",
 };
 
@@ -17,7 +19,11 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const clone = (value) => structuredClone(value);
 const id = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const date = new Date();
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60 * 1000);
+  return local.toISOString().slice(0, 10);
+};
 
 function escapeHtml(value = "") {
   return String(value)
@@ -69,6 +75,8 @@ function homeTemplate() {
   const open = state.todos.filter((item) => !item.done);
   const progress = state.todos.length ? Math.round((state.todos.filter((item) => item.done).length / state.todos.length) * 100) : 0;
   const custom = state.customPets.find((item) => item.id === state.settings.activePet);
+  const weather = state.weather?.current;
+  const weatherLocation = state.weather?.location;
   return `<div class="grid two">
     <div class="card hero-card">
       <div>
@@ -91,6 +99,15 @@ function homeTemplate() {
     <div class="card"><div class="stat"><span class="stat-icon">✓</span><div><b>${state.stats.completedTodos}</b><small>已完成任务</small></div></div></div>
     <div class="card"><div class="stat"><span class="stat-icon">☀</span><div><b>${state.focus.sessions}</b><small>专注次数</small></div></div></div>
     <div class="card"><div class="stat"><span class="stat-icon">↗</span><div><b>${state.habits.reduce((sum, habit) => sum + habit.streak, 0)}</b><small>习惯累计打卡</small></div></div></div>
+  </div>
+  <div class="card weather-strip" style="margin-top:18px">
+    <div class="weather-strip-main">
+      <span class="weather-icon">${weather?.icon || "☁️"}</span>
+      <div><small>今日天气${weatherLocation ? ` · ${escapeHtml(weatherLocation.name)}` : ""}</small>
+      <b>${weather ? `${weather.temperature}° · ${escapeHtml(weather.label)}` : "设置城市后查看天气"}</b></div>
+    </div>
+    <div class="weather-strip-detail">${weather ? `体感 ${weather.apparentTemperature}° · 湿度 ${weather.humidity}% · 风速 ${weather.windSpeed} km/h` : "只在你主动查询时联网，不读取系统定位"}</div>
+    <button class="button ghost small" data-goto="weather">${weather ? "查看预报" : "设置城市"}</button>
   </div>
   <div class="grid two" style="margin-top:18px">
     <div class="card"><div class="card-head"><h3>接下来</h3><button class="link" data-goto="todos">查看全部</button></div>
@@ -116,6 +133,11 @@ function petsTemplate() {
     <b>${pet.name}</b><small>${pet.note}</small></div>`).join("");
   const customCards = state.customPets.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}" data-select-pet="${pet.id}">
     <div class="preview"><img src="${pet.dataUrl}" alt=""></div><b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · 自定义</small></div>`).join("");
+  const actionButtons = [
+    ["idle", "待机"], ["walk", "行走"], ["stretch", "伸懒腰"],
+    ["play", "玩耍"], ["feed", "进食"], ["study", "学习"],
+    ["sleep", "休息"], ["celebrate", "庆祝"], ["alert", "提醒"],
+  ];
   return `<div class="card">
     <div class="card-head"><div><h2>我的桌宠</h2><p class="muted" style="font-size:11px;margin:6px 0 0">选择当前出现在桌面的伙伴</p></div></div>
     <div class="pet-grid">
@@ -142,16 +164,24 @@ function petsTemplate() {
     </div>
   </div>
   <div class="card" style="margin-top:18px"><div class="card-head"><h3>动作实验室</h3><small>立即预览桌宠动作</small></div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">${["idle","walk","stretch","play","feed","study","sleep","celebrate","alert"].map((name) => `<button class="button ghost small" data-pet-action="${name}">${name}</button>`).join("")}</div>
+    <div class="action-lab">${actionButtons.map(([name, label]) => `<button class="button ghost small" data-pet-action="${name}">${label}<small>${name}</small></button>`).join("")}</div>
+    <p class="muted action-note">已使用 PetDesk 标准动作模式 v1：九类状态与 16 方向，可继续扩展 Sprite Sheet 角色包。</p>
   </div>`;
 }
 
 function focusTemplate() {
   const duration = state.focus.duration || 1500;
+  const customMinutes = Math.round(duration / 60);
   return `<div class="focus-layout">
     <div class="card timer-card">
       <div>
-        <div class="presets"><button data-preset="1500" class="${duration === 1500 ? "active" : ""}">25 分钟</button><button data-preset="3000" class="${duration === 3000 ? "active" : ""}">50 分钟</button><button data-preset="900" class="${duration === 900 ? "active" : ""}">15 分钟</button></div>
+        <div class="presets"><button data-preset="900" class="${duration === 900 ? "active" : ""}">15 分钟</button><button data-preset="1500" class="${duration === 1500 ? "active" : ""}">25 分钟</button><button data-preset="3000" class="${duration === 3000 ? "active" : ""}">50 分钟</button></div>
+        <div class="custom-focus">
+          <label for="customFocusMinutes">自定义</label>
+          <input id="customFocusMinutes" type="number" min="1" max="240" step="1" value="${customMinutes}" aria-label="自定义专注分钟数">
+          <span>分钟</span>
+          <button class="button ghost small" id="applyCustomFocus">应用</button>
+        </div>
         <div class="timer-ring" id="timerRing"><div class="timer-content"><strong id="timerText">25:00</strong><span>${state.focus.running ? "保持专注，桌宠正陪着你" : "准备好就开始"}</span></div></div>
         <div class="timer-controls">${state.focus.running ? `<button class="button ghost" id="pauseFocus">暂停</button>` : `<button class="button orange" id="startFocus">开始专注</button>`}<button class="button ghost" id="resetFocus">重置</button></div>
       </div>
@@ -163,6 +193,39 @@ function focusTemplate() {
       </div></div>
       <div class="card"><h3>陪伴模式</h3><p class="muted" style="font-size:11px;line-height:1.7">专注开始后，桌宠会进入读书动作并减少主动说话。完成时会弹出系统通知并庆祝。</p><button class="button ghost" data-pet-action="study">预览读书动作</button></div>
     </div>
+  </div>`;
+}
+
+function weatherTemplate() {
+  const weather = state.weather || {};
+  const current = weather.current;
+  const location = weather.location;
+  const locationLabel = location
+    ? [location.name, location.admin1, location.country].filter(Boolean).join(" · ")
+    : "";
+  const updated = weather.updatedAt
+    ? new Date(weather.updatedAt).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    : "";
+  const days = (weather.days || []).map((day, index) => {
+    const label = index === 0 ? "今天" : new Date(`${day.date}T12:00:00`).toLocaleDateString("zh-CN", { weekday: "short" });
+    return `<div class="forecast-day"><small>${label}</small><span>${day.icon}</span><b>${day.max}° / ${day.min}°</b><em>${escapeHtml(day.label)} · 降水 ${day.rainChance}%</em></div>`;
+  }).join("");
+  return `<div class="weather-page">
+    <div class="card weather-hero ${current?.isDay === false ? "night" : ""}">
+      <div class="weather-search">
+        <label class="field-label">城市或邮政编码
+          <div class="search-row"><input id="weatherCity" class="field" placeholder="例如：北京、上海、东京" value="${escapeHtml(location?.name || "")}">
+          <button class="button orange" id="searchWeather" ${weatherLoading ? "disabled" : ""}>${weatherLoading ? "查询中…" : "查询天气"}</button></div>
+        </label>
+      </div>
+      ${current ? `<div class="current-weather">
+        <span class="current-weather-icon">${current.icon}</span>
+        <div><small>${escapeHtml(locationLabel)}</small><strong>${current.temperature}°</strong><h2>${escapeHtml(current.label)}</h2></div>
+        <div class="weather-metrics"><span><b>${current.apparentTemperature}°</b>体感</span><span><b>${current.humidity}%</b>湿度</span><span><b>${current.windSpeed}</b>km/h 风速</span></div>
+      </div>` : `<div class="weather-empty"><span>🌤️</span><h2>先设置你关心的城市</h2><p>PetDesk 不读取系统定位；输入城市后才会向天气服务查询。</p></div>`}
+    </div>
+    ${days ? `<div class="card"><div class="card-head"><h3>未来四天</h3><div class="weather-updated">${updated ? `更新于 ${updated}` : ""}<button class="link" id="refreshWeather">刷新</button></div></div><div class="forecast-grid">${days}</div></div>` : ""}
+    <p class="weather-credit">天气数据：Open-Meteo · 地点数据：GeoNames。网络异常时不会影响待办、专注等本地功能。</p>
   </div>`;
 }
 
@@ -209,6 +272,7 @@ function switchRow(key, title, desc) {
 function settingsTemplate() {
   return `<div class="settings-grid">
     <div class="card"><div class="card-head"><h3>桌面行为</h3></div>
+      <div class="setting-row"><div><b>桌宠显示状态</b><small>${state.runtime.petVisible ? "当前显示在桌面上" : "当前已隐藏，可随时恢复"}</small></div><button class="button ghost small" data-toggle-pet>${state.runtime.petVisible ? "隐藏" : "显示"}</button></div>
       ${switchRow("alwaysOnTop", "始终置顶", "让桌宠保持在其他窗口上方")}
       ${switchRow("clickThrough", "鼠标穿透", "临时忽略鼠标；可从托盘恢复")}
       ${switchRow("startup", "开机启动", "登录 Windows 后自动运行")}
@@ -235,8 +299,21 @@ function render() {
   $("#todos").innerHTML = todosTemplate();
   $("#alarms").innerHTML = alarmsTemplate();
   $("#habits").innerHTML = habitsTemplate();
+  $("#weather").innerHTML = weatherTemplate();
   $("#settings").innerHTML = settingsTemplate();
+  syncPetVisibilityButton();
   updateTimer();
+}
+
+function syncPetVisibilityButton() {
+  const visible = state?.runtime?.petVisible !== false;
+  const button = $("#togglePet");
+  const text = $("#petVisibilityText");
+  if (!button || !text) return;
+  button.classList.toggle("hidden-state", !visible);
+  text.textContent = visible ? "桌宠已显示" : "显示桌宠";
+  button.title = visible ? "隐藏桌宠（隐藏后可从此处或托盘恢复）" : "显示桌宠";
+  button.setAttribute("aria-label", button.title);
 }
 
 function navigate(page) {
@@ -394,6 +471,16 @@ document.addEventListener("click", async (event) => {
     next.focus.endsAt = null;
     await save(next);
   }
+  if (target.id === "applyCustomFocus") {
+    const minutes = Math.min(240, Math.max(1, Math.round(Number($("#customFocusMinutes").value) || 25)));
+    const next = clone(state);
+    next.focus.duration = minutes * 60;
+    next.focus.remaining = minutes * 60;
+    next.focus.running = false;
+    next.focus.endsAt = null;
+    await save(next);
+    toast(`已设置 ${minutes} 分钟专注`);
+  }
   if (target.id === "startFocus") await window.petdesk.startFocus(state.focus.remaining || state.focus.duration);
   if (target.id === "pauseFocus") await window.petdesk.pauseFocus();
   if (target.id === "resetFocus") {
@@ -402,6 +489,7 @@ document.addEventListener("click", async (event) => {
     next.focus.endsAt = null;
     next.focus.remaining = next.focus.duration;
     await save(next);
+    window.petdesk.petAction({ action: "idle", silent: true });
   }
   if (target.dataset.habit !== undefined) {
     const habitId = target.closest("[data-id]").dataset.id;
@@ -417,6 +505,27 @@ document.addEventListener("click", async (event) => {
     const next = clone(state);
     next.habits.push({ id: id(), title, streak: 0, checkedDate: "" });
     await save(next);
+  }
+  if (target.id === "searchWeather" || target.id === "refreshWeather") {
+    const query = target.id === "searchWeather" ? $("#weatherCity").value.trim() : "";
+    if (target.id === "searchWeather" && query.length < 2) return toast("请输入至少两个字符的城市名");
+    weatherLoading = true;
+    render();
+    navigate("weather");
+    try {
+      state.weather = await window.petdesk.loadWeather(query);
+      toast(`已更新 ${state.weather.location.name} 天气`);
+    } catch (error) {
+      toast(error.message || "天气查询失败，请稍后重试");
+    } finally {
+      weatherLoading = false;
+      render();
+      navigate("weather");
+    }
+  }
+  if (target.dataset.togglePet !== undefined) {
+    const visible = await window.petdesk.togglePet();
+    toast(visible ? "桌宠已显示" : "桌宠已隐藏，可用这里或托盘恢复");
   }
   if (target.id === "quitApp") window.petdesk.quit();
 });
@@ -459,11 +568,30 @@ document.addEventListener("change", async (event) => {
   }
 });
 
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  if (event.target.id === "customFocusMinutes") {
+    event.preventDefault();
+    $("#applyCustomFocus").click();
+  }
+  if (event.target.id === "weatherCity") {
+    event.preventDefault();
+    $("#searchWeather").click();
+  }
+  if (event.target.id === "todoInput") {
+    event.preventDefault();
+    $("#addTodo").click();
+  }
+});
+
 $("#nav").addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (button) navigate(button.dataset.page);
 });
-$("#hidePet").addEventListener("click", () => window.petdesk.hidePet());
+$("#togglePet").addEventListener("click", async () => {
+  const visible = await window.petdesk.togglePet();
+  toast(visible ? "桌宠已显示" : "桌宠已隐藏，可点击此按钮或托盘图标恢复");
+});
 window.petdesk.onState((next) => { state = next; render(); });
 
 window.petdesk.getState().then((initial) => {
@@ -471,4 +599,8 @@ window.petdesk.getState().then((initial) => {
   const date = new Date();
   $("#eyebrow").textContent = date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }).toUpperCase();
   render();
+  const weatherAge = Date.now() - new Date(state.weather?.updatedAt || 0).getTime();
+  if (state.weather?.location && weatherAge > 30 * 60 * 1000) {
+    window.petdesk.loadWeather("").catch(() => {});
+  }
 });

@@ -13,16 +13,8 @@ let bubbleTimer;
 let lastTap = 0;
 let customDataUrl = "";
 
-const lines = {
-  idle: ["今天也一起加油吧。", "需要我陪你专注吗？", "记得喝水～", "摸摸我会有惊喜。"],
-  feed: ["好吃！能量满格。", "再来一块也不是不可以。"],
-  play: ["抓到你啦！", "再玩一会儿嘛。"],
-  study: ["我会安静陪着你。", "这一小段专注完成再休息。"],
-  sleep: ["晚安……Zzz", "先充一会儿电。"],
-  celebrate: ["完成啦，太棒了！", "今天又向前一步。"],
-  alert: ["时间到啦！", "这是你设置的提醒哦。"],
-  pet: ["呼噜呼噜～", "这里再摸一下。"],
-};
+const actionPatterns = window.PetActionPatterns;
+const lines = actionPatterns.ACTION_LINES;
 
 function speak(text, duration = 3200) {
   clearTimeout(bubbleTimer);
@@ -31,11 +23,14 @@ function speak(text, duration = 3200) {
   bubbleTimer = setTimeout(() => bubble.classList.remove("show"), duration);
 }
 
-function setAction(next, duration = 4200) {
+function setAction(next, duration = actionPatterns.actionDuration(next), silent = false) {
   action = next;
   actionUntil = performance.now() + duration;
-  if (customDataUrl) customPet.className = `custom-pet ${next}`;
-  if (lines[next]) speak(lines[next][Math.floor(Math.random() * lines[next].length)]);
+  if (customDataUrl) {
+    const direction = actionPatterns.directionFromVector(pointer.x - 260, pointer.y - 230).toLowerCase();
+    customPet.className = `custom-pet ${next} group-${actionPatterns.actionGroup(next)} dir-${direction}`;
+  }
+  if (!silent && lines[next]) speak(lines[next][Math.floor(Math.random() * lines[next].length)]);
 }
 
 function ellipse(x, y, rx, ry, fill, rotation = 0) {
@@ -268,7 +263,10 @@ menu.addEventListener("click", (event) => {
 
 window.petdesk.getState().then(useState);
 window.petdesk.onState(useState);
-window.petdesk.onPetAction((next) => setAction(next));
+window.petdesk.onPetAction((command) => {
+  if (typeof command === "string") setAction(command);
+  else if (command?.action) setAction(command.action, command.durationMs, command.silent);
+});
 window.petdesk.onPetSpeak(({ text, action: next }) => {
   if (next) setAction(next);
   speak(text, 5600);
