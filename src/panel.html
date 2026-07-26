@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PetDesk</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">P</span><div><strong>PetDesk</strong><small>你的桌面陪伴</small></div></div>
+      <nav id="nav">
+        <button class="active" data-page="home"><span>⌂</span>今日</button>
+        <button data-page="pets"><span>✦</span>桌宠工坊</button>
+        <button data-page="focus"><span>◷</span>专注</button>
+        <button data-page="todos"><span>✓</span>待办事项</button>
+        <button data-page="alarms"><span>♢</span>提醒与闹钟</button>
+        <button data-page="habits"><span>↗</span>习惯</button>
+        <button data-page="settings"><span>⚙</span>设置</button>
+      </nav>
+      <div class="sidebar-tip"><span>☀</span><div><b>轻松一点</b><p>完成任务也别忘了休息。</p></div></div>
+    </aside>
+    <main>
+      <header>
+        <div><p id="eyebrow">SUNDAY · JUL 26</p><h1 id="pageTitle">早上好，今天想完成什么？</h1></div>
+        <button class="icon-button" id="hidePet" title="隐藏桌宠">◌</button>
+      </header>
+      <section id="home" class="page active"></section>
+      <section id="pets" class="page"></section>
+      <section id="focus" class="page"></section>
+      <section id="todos" class="page"></section>
+      <section id="alarms" class="page"></section>
+      <section id="habits" class="page"></section>
+      <section id="settings" class="page"></section>
+    </main>
+    <div id="toast" class="toast"></div>
+    <script src="panel.js"></script>
+  </body>
+</html>
