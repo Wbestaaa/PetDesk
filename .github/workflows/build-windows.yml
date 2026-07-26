@@ -1,0 +1,57 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Test and package Windows app
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build installer and portable app
+        run: npm run pack:win
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PetDesk-Windows-${{ github.sha }}
+          path: |
+            dist/PetDesk-*-setup-x64.exe
+            dist/PetDesk-*-portable-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Attach binaries to GitHub Release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $files = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -ExpandProperty FullName
+          gh release upload "${{ github.event.release.tag_name }}" $files --clobber
