@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "taotao",
+  "name": "桃桃",
+  "actionPattern": "petdesk-standard-v1",
+  "artStyle": "3d-chibi",
+  "generatedFor": "PetDesk",
+  "description": "喜欢饼干和羽毛的元气橘猫。",
+  "actions": {
+    "idle": "actions/idle.webp",
+    "walk": "actions/walk.webp",
+    "stretch": "actions/stretch.webp",
+    "play": "actions/play.webp",
+    "feed": "actions/feed.webp",
+    "study": "actions/study.webp",
+    "sleep": "actions/sleep.webp",
+    "celebrate": "actions/celebrate.webp",
+    "alert": "actions/alert.webp"
+  },
+  "fallbacks": {
+    "pet": "idle",
+    "run": "walk",
+    "jump": "celebrate",
+    "write": "study",
+    "type": "study",
+    "nap": "sleep",
+    "dance": "celebrate",
+    "alarm": "alert"
+  },
+  "speech": {
+    "pet": ["呼噜呼噜～再摸一下也可以哦。"],
+    "play": ["羽毛跑到那边啦，快追！"],
+    "feed": ["饼干收到，能量满格！"]
+  }
+}

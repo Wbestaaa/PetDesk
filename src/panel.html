@@ -16,6 +16,7 @@
         <button data-page="todos"><span>✓</span>待办事项</button>
         <button data-page="alarms"><span>♢</span>提醒与闹钟</button>
         <button data-page="habits"><span>↗</span>习惯</button>
+        <button data-page="weather"><span>☁</span>天气</button>
         <button data-page="settings"><span>⚙</span>设置</button>
       </nav>
       <div class="sidebar-tip"><span>☀</span><div><b>轻松一点</b><p>完成任务也别忘了休息。</p></div></div>
@@ -23,7 +24,9 @@
     <main>
       <header>
         <div><p id="eyebrow">SUNDAY · JUL 26</p><h1 id="pageTitle">早上好，今天想完成什么？</h1></div>
-        <button class="icon-button" id="hidePet" title="隐藏桌宠">◌</button>
+        <button class="pet-visibility-button" id="togglePet" title="隐藏桌宠" aria-label="隐藏桌宠">
+          <span class="visibility-dot"></span><span id="petVisibilityText">桌宠已显示</span>
+        </button>
       </header>
       <section id="home" class="page active"></section>
       <section id="pets" class="page"></section>
@@ -31,9 +34,11 @@
       <section id="todos" class="page"></section>
       <section id="alarms" class="page"></section>
       <section id="habits" class="page"></section>
+      <section id="weather" class="page"></section>
       <section id="settings" class="page"></section>
     </main>
     <div id="toast" class="toast"></div>
+    <script src="pet-catalog.js"></script>
     <script src="panel.js"></script>
   </body>
 </html>
