@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-27
+
 ### Added
 
 - Added “毕业花花” as a selectable Q-version human cartoonization of the supplied graduation photo, with nine transparent action poses and character-specific replies.
@@ -13,36 +15,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added fast-drag celebration feedback, reaction particles, grouped right-click actions, random interaction, and reminder preview.
 - Added a current-companion profile, interaction guide, richer pet cards, and nine-action preview lab to the pet selection page.
 - Added a cooldown-aware companion bond loop: direct interaction gives immediate feedback, while Todo, habit, and focus completion grant larger persistent rewards and level-ups.
+- Added an in-app AI service setup for API URL, API Key, model selection, save, connection test, and clear.
+- Added Windows DPAPI-backed API Key storage through Electron safe storage; keys are never returned to the renderer.
+- Added one-click generation of a consistent 3×3 action sheet, automatic nine-action splitting, connected-background removal, local manifests, progress feedback, and immediate activation.
+- Added selectable source-subject guidance so human photos remain human and animal photos preserve their species.
+- Added custom-pet deletion with confirmation and recoverable Windows Recycle Bin behavior.
+- Added AI configuration, URL security, action-grid, prompt, key-redaction, and transparency-processing tests.
+- Added PetDesk standard action pattern v1 with nine action groups and 16 directions.
+- Added reusable custom-pet package documentation and runtime action metadata.
+- Added Taotao's action pack with nine independent transparent poses.
+- Added pointer hover reactions, optional autonomous roaming, action labels, and contextual dialogue.
+- Added custom focus durations from 1 to 240 minutes.
+- Added city-based current weather and four-day forecast powered by Open-Meteo.
 
 ### Changed
 
 - Reduced autonomous interruptions, paused them during focus sessions, and made frequency settings meaningfully affect behavior.
 - Made weather refresh trigger contextual rain alerts or sunny celebration responses.
 - Hid procedural color controls for image-based pets whose native palettes should not be recolored.
-
-### Fixed
-
-- Corrected “毕业花花” from an incorrectly inferred cat into a consistent chibi human graduate based on the source photo, with visible human face, arms, hands, legs, and shoes; black now reads as graduation clothing instead of a body silhouette.
-
-## [0.2.0] - 2026-07-26
-
-### Added
-
-- PetDesk standard action pattern v1 with nine action groups and 16 directions.
-- Reusable custom-pet package documentation and runtime action metadata.
-- Generated Taotao action pack with nine independent transparent poses.
-- Pointer hover reactions, optional autonomous roaming, action labels, and contextual dialogue.
-- Custom focus durations from 1 to 240 minutes.
-- City-based current weather and four-day forecast powered by Open-Meteo.
-- Weather and action-pattern unit tests.
-
-### Changed
-
+- Replaced environment-variable-only AI onboarding with a visual workflow while keeping `OPENAI_API_KEY` as a backwards-compatible fallback.
+- Updated source-run instructions to use `npm.cmd` when PowerShell execution policy blocks `npm.ps1`.
 - Improved the control-center header, action lab, focus controls, weather layout, and responsive details.
 - Made the tray left-click behavior context-aware.
 
 ### Fixed
 
+- Corrected “毕业花花” from an incorrectly inferred cat into a consistent chibi human graduate based on the source photo, with visible human face, arms, hands, legs, and shoes; black now reads as graduation clothing instead of a body silhouette.
 - Replaced the one-way hide button with a visible status toggle that can restore the pet.
 - Kept the tray menu label synchronized with the saved pet visibility state.
 - Honored the `--hidden` launch argument for the control-center window.

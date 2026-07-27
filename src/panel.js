@@ -2,6 +2,12 @@ let state;
 let currentPage = "home";
 let pickedImage;
 let selectedStyle = "pixel";
+let selectedSubjectType = "auto";
+let builderName = "我的伙伴";
+let builderDescription = "";
+let aiConfig;
+let aiStatus = "";
+let actionGeneration = { running: false, progress: 0, message: "" };
 let timerInterval;
 let weatherLoading = false;
 const pageTitles = {
@@ -156,11 +162,14 @@ function petsTemplate() {
   const activeCustom = state.customPets.find((pet) => pet.id === state.settings.activePet);
   const activePet = activeBuiltIn || {
     name: activeCustom?.name || state.settings.petName,
-    note: `${activeCustom?.style || "图片"} · 自定义`,
-    description: "使用你上传并保存的专属桌宠形象。",
-    tags: ["自定义角色", "单图动画"],
+    note: `${activeCustom?.style || "图片"} · ${activeCustom?.kind === "action-art" ? "九动作套装" : "自定义"}`,
+    description: activeCustom?.kind === "action-art"
+      ? "由你的原图生成并透明化的九动作桌宠，可完整响应拖动、专注、庆祝与提醒。"
+      : "使用你上传并保存的专属桌宠形象。",
+    tags: activeCustom?.kind === "action-art" ? ["自定义角色", "9 个动作", "透明背景"] : ["自定义角色", "单图动画"],
     icon: activeCustom?.dataUrl,
     kind: "custom",
+    type: activeCustom?.subjectType,
   };
   const builtInCards = builtIns.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}"
     data-select-pet="${pet.id}" data-pet-type="${pet.type}" data-pet-name="${pet.name}" data-body="${pet.body || ""}" data-accent="${pet.accent || ""}">
@@ -168,8 +177,14 @@ function petsTemplate() {
     <div class="preview">${pet.icon ? `<img src="${pet.icon}" alt="${pet.name}">` : `<span class="procedural-pet">${pet.emoji}</span>`}</div>
     <b>${pet.name}</b><small>${pet.note}</small>
     <div class="pet-card-tags">${pet.tags.slice(0, 2).map((tag) => `<span>${tag}</span>`).join("")}</div></div>`).join("");
-  const customCards = state.customPets.map((pet) => `<div class="pet-option ${state.settings.activePet === pet.id ? "active" : ""}" data-select-pet="${pet.id}">
-    <div class="preview"><img src="${pet.dataUrl}" alt=""></div><b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · 自定义</small></div>`).join("");
+  const customCards = state.customPets.map((pet) => `<div class="pet-option custom-option ${state.settings.activePet === pet.id ? "active" : ""}"
+    data-select-pet="${pet.id}" data-pet-name="${escapeHtml(pet.name)}" data-pet-type="${escapeHtml(pet.subjectType || "custom")}">
+    ${state.settings.activePet === pet.id ? `<span class="selected-mark">使用中</span>` : ""}
+    <button class="custom-pet-delete" data-delete-custom="${pet.id}" title="删除“${escapeHtml(pet.name)}”" aria-label="删除“${escapeHtml(pet.name)}”">×</button>
+    <div class="preview"><img src="${pet.dataUrl}" alt="${escapeHtml(pet.name)}"></div>
+    <b>${escapeHtml(pet.name)}</b><small>${escapeHtml(pet.style)} · ${pet.kind === "action-art" ? "九动作" : "单图"}</small>
+    <div class="pet-card-tags"><span>${pet.kind === "action-art" ? "完整动作" : "基础动画"}</span><span>可删除</span></div>
+  </div>`).join("");
   const actionButtons = [
     ["idle", "🌿", "待机", "呼吸与陪伴"], ["walk", "🚶", "行走", "拖动与巡视"],
     ["pet", "🫳", "抚摸", "点击反馈"], ["stretch", "↗", "伸懒腰", "久坐放松"],
@@ -182,6 +197,14 @@ function petsTemplate() {
     : `<span class="procedural-pet">${activePet.emoji || "🐾"}</span>`;
   const petPronoun = activePet.type === "human" ? "她" : "它";
   const bond = bondProgress(state.companion);
+  const aiReady = Boolean(aiConfig?.configured);
+  const generation = actionGeneration.running || actionGeneration.message
+    ? `<div class="generation-progress ${actionGeneration.running ? "running" : "complete"}">
+      <div><b>${escapeHtml(actionGeneration.message || "准备生成")}</b><span>${Math.round(actionGeneration.progress || 0)}%</span></div>
+      <i><span style="width:${Math.max(0, Math.min(100, actionGeneration.progress || 0))}%"></span></i>
+      <small>${actionGeneration.running ? "请不要关闭应用；完成后会自动保存并启用。" : "你可以在“我的桌宠”中选择、预览或删除。"}</small>
+    </div>`
+    : "";
   return `<div class="card pet-profile">
     <div class="pet-profile-visual">${activeVisual}</div>
     <div class="pet-profile-copy">
@@ -219,16 +242,28 @@ function petsTemplate() {
     <div class="builder">
       <div class="upload-zone" id="uploadZone">${pickedImage ? `<img src="${pickedImage.resultDataUrl || pickedImage.dataUrl}" alt="预览">` : `<span style="font-size:38px">＋</span><b>选择一张图片</b><small>PNG / JPG / WEBP</small>`}</div>
       <div class="grid">
-        <label class="field-label">桌宠名字<input id="petNameInput" class="field" value="我的伙伴" maxlength="20"></label>
+        <label class="field-label">桌宠名字<input id="petNameInput" class="field" value="${escapeHtml(builderName)}" maxlength="20"></label>
+        <label class="field-label">原图主体
+          <select id="subjectType"><option value="auto" ${selectedSubjectType === "auto" ? "selected" : ""}>自动保留原主体</option><option value="human" ${selectedSubjectType === "human" ? "selected" : ""}>人物（绝不动物化）</option><option value="animal" ${selectedSubjectType === "animal" ? "selected" : ""}>动物（保留品种特征）</option></select>
+        </label>
         <div class="style-options">
           <button class="style-option ${selectedStyle === "pixel" ? "active" : ""}" data-style="pixel"><b>像素风 · 本地</b><small>离线完成，硬边像素与有限色盘</small></button>
           <button class="style-option ${selectedStyle === "chibi" ? "active" : ""}" data-style="chibi"><b>Q版 · AI</b><small>大头短身、表情鲜明的可爱角色</small></button>
           <button class="style-option ${selectedStyle === "realistic" ? "active" : ""}" data-style="realistic"><b>写实 · AI</b><small>保留外观特征，生成精致桌宠肖像</small></button>
           <button class="style-option ${selectedStyle === "watercolor" ? "active" : ""}" data-style="watercolor"><b>水彩 · AI</b><small>柔和手绘质感与干净轮廓</small></button>
         </div>
-        <label class="field-label">补充描述（可选）<textarea id="styleDescription" rows="3" placeholder="例如：保留蓝色项圈，表情开心"></textarea></label>
-        <div style="display:flex;gap:9px"><button class="button" id="transformImage" ${pickedImage ? "" : "disabled"}>生成预览</button><button class="button orange" id="savePet" ${pickedImage?.resultDataUrl ? "" : "disabled"}>保存并使用</button></div>
-        <small class="muted">像素风无需联网；AI 风格需要在系统环境变量中设置 OPENAI_API_KEY，API 费用与 ChatGPT 订阅分开计算。</small>
+        <label class="field-label">补充描述（可选）<textarea id="styleDescription" rows="3" placeholder="例如：保留长黑发、学士帽和花束">${escapeHtml(builderDescription)}</textarea></label>
+        <div class="builder-actions">
+          <button class="button" id="transformImage" ${pickedImage || actionGeneration.running ? "" : "disabled"} ${actionGeneration.running ? "disabled" : ""}>生成单图预览</button>
+          <button class="button orange" id="generateActionPack" ${pickedImage && aiReady && !actionGeneration.running ? "" : "disabled"}>一键生成完整九动作</button>
+          <button class="button ghost" id="savePet" ${pickedImage?.resultDataUrl && !actionGeneration.running ? "" : "disabled"}>仅保存单图</button>
+        </div>
+        ${generation}
+        <div class="ai-builder-note ${aiReady ? "ready" : ""}">
+          <span>${aiReady ? "✓ AI 图片服务已配置" : "尚未配置 AI 图片服务"}</span>
+          <button class="link" data-goto="settings">${aiReady ? "查看设置" : "现在配置"}</button>
+          <small>像素单图预览可离线完成；九动作会调用一次图片编辑 API，费用与 ChatGPT 订阅分开计算。</small>
+        </div>
       </div>
     </div>
   </div>`;
@@ -337,11 +372,35 @@ function switchRow(key, title, desc) {
 function settingsTemplate() {
   const activeBuiltIn = petCatalog.findBuiltInPet(state.settings.activePet);
   const supportsColorControls = activeBuiltIn?.kind === "procedural";
+  const currentAi = aiConfig || {
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-image-2",
+    configured: false,
+    source: "none",
+    storageProtected: false,
+  };
+  const aiSource = currentAi.source === "app"
+    ? "已由 Windows 安全存储保护"
+    : currentAi.source === "environment"
+      ? "正在兼容读取环境变量，可在这里迁移"
+      : "尚未连接";
   const appearanceControls = supportsColorControls
     ? `<label class="setting-row"><div><b>毛色</b><small>内置动态桌宠颜色</small></div><input data-color-setting="bodyColor" class="color-input" type="color" value="${state.settings.bodyColor}"></label>
       <label class="setting-row"><div><b>腹部与脚垫</b><small>内置动态桌宠辅助色</small></div><input data-color-setting="accentColor" class="color-input" type="color" value="${state.settings.accentColor}"></label>`
     : `<div class="setting-row locked-style"><div><b>角色原生配色</b><small>${activeBuiltIn?.name || "自定义角色"}使用自己的动作素材，颜色不会被全局设置覆盖</small></div><span>已锁定</span></div>`;
   return `<div class="settings-grid">
+    <div class="card ai-settings-card span-two">
+      <div class="card-head"><div><h3>AI 图片服务</h3><p class="muted">在应用内完成连接，用于人物卡通化和九动作生成</p></div><span class="ai-status ${currentAi.configured ? "ready" : ""}">${currentAi.configured ? "已配置" : "未配置"}</span></div>
+      <div class="ai-config-grid">
+        <label class="field-label">API URL<input id="aiBaseUrl" class="field" value="${escapeHtml(currentAi.baseUrl)}" placeholder="https://api.openai.com/v1" spellcheck="false"></label>
+        <label class="field-label">图片模型<input id="aiModel" class="field" value="${escapeHtml(currentAi.model)}" placeholder="gpt-image-2" spellcheck="false"></label>
+        <label class="field-label span-two">API Key<input id="aiApiKey" class="field" type="password" value="" placeholder="${currentAi.configured ? "已安全保存；留空表示不修改" : "输入 API Key"}" autocomplete="new-password" spellcheck="false"></label>
+      </div>
+      <div class="ai-config-footer">
+        <div><b>${escapeHtml(aiSource)}</b><small>远程地址必须使用 HTTPS。使用第三方兼容地址时，你的 API Key 和原图会发送给该服务商。</small>${aiStatus ? `<em>${escapeHtml(aiStatus)}</em>` : ""}</div>
+        <div><button class="button" id="saveAiConfig">保存配置</button><button class="button orange" id="testAiConfig">保存并测试</button><button class="button ghost" id="clearAiConfig" ${currentAi.source === "app" ? "" : "disabled"}>清除</button></div>
+      </div>
+    </div>
     <div class="card"><div class="card-head"><h3>桌面行为</h3></div>
       <div class="setting-row"><div><b>桌宠显示状态</b><small>${state.runtime.petVisible ? "当前显示在桌面上" : "当前已隐藏，可随时恢复"}</small></div><button class="button ghost small" data-toggle-pet>${state.runtime.petVisible ? "隐藏" : "显示"}</button></div>
       ${switchRow("alwaysOnTop", "始终置顶", "让桌宠保持在其他窗口上方")}
@@ -449,6 +508,41 @@ function localPixelate(dataUrl) {
   });
 }
 
+function builderValues() {
+  builderName = $("#petNameInput")?.value.trim().slice(0, 20) || builderName;
+  builderDescription = $("#styleDescription")?.value || builderDescription;
+  selectedSubjectType = $("#subjectType")?.value || selectedSubjectType;
+  return {
+    name: builderName || "我的伙伴",
+    description: builderDescription.trim(),
+    subjectType: selectedSubjectType,
+    style: selectedStyle,
+  };
+}
+
+async function persistAiForm(shouldTest = false) {
+  const baseUrl = $("#aiBaseUrl")?.value.trim();
+  const model = $("#aiModel")?.value.trim();
+  const apiKey = $("#aiApiKey")?.value.trim();
+  aiStatus = shouldTest ? "正在安全保存并检查连接…" : "正在安全保存…";
+  try {
+    aiConfig = await window.petdesk.saveAiConfig({ baseUrl, model, apiKey });
+    if (shouldTest) {
+      const result = await window.petdesk.testAiConfig();
+      aiStatus = result.message;
+      toast("AI 图片服务连接成功");
+    } else {
+      aiStatus = aiConfig.configured ? "配置已保存，可以生成九动作。" : "URL 与模型已保存，请继续填写 API Key。";
+      toast("AI 配置已保存");
+    }
+  } catch (error) {
+    aiStatus = error.message || "AI 配置失败";
+    toast(aiStatus);
+  }
+  render();
+  navigate("settings");
+}
+
 document.addEventListener("click", async (event) => {
   const target = event.target.closest("button, .pet-option, .upload-zone");
   if (!target) return;
@@ -490,21 +584,39 @@ document.addEventListener("click", async (event) => {
     await save(next);
     toast("已切换桌宠");
   }
+  if (target.dataset.deleteCustom) {
+    try {
+      const result = await window.petdesk.deleteCustomPet(target.dataset.deleteCustom);
+      if (result.deleted) {
+        state = await window.petdesk.getState();
+        render();
+        navigate("pets");
+        toast("自定义桌宠已移入回收站");
+      }
+    } catch (error) {
+      toast(error.message || "删除失败");
+    }
+  }
   if (target.id === "uploadZone") {
-    pickedImage = await window.petdesk.pickImage();
-    if (pickedImage) render();
+    try {
+      pickedImage = await window.petdesk.pickImage();
+      if (pickedImage) render();
+    } catch (error) {
+      toast(error.message || "图片读取失败");
+    }
   }
   if (target.dataset.style) {
     selectedStyle = target.dataset.style;
     $$(".style-option").forEach((button) => button.classList.toggle("active", button.dataset.style === selectedStyle));
   }
   if (target.id === "transformImage" && pickedImage) {
+    const values = builderValues();
     target.disabled = true;
     target.textContent = "正在生成…";
     try {
       pickedImage.resultDataUrl = selectedStyle === "pixel"
         ? await localPixelate(pickedImage.dataUrl)
-        : await window.petdesk.aiTransform({ sourcePath: pickedImage.path, style: selectedStyle, description: $("#styleDescription").value });
+        : await window.petdesk.aiTransform({ sourcePath: pickedImage.path, ...values });
       render();
       toast("预览生成完成");
     } catch (error) {
@@ -514,10 +626,47 @@ document.addEventListener("click", async (event) => {
     }
   }
   if (target.id === "savePet" && pickedImage?.resultDataUrl) {
-    await window.petdesk.saveCustomImage({ dataUrl: pickedImage.resultDataUrl, name: $("#petNameInput").value, style: selectedStyle });
+    const values = builderValues();
+    await window.petdesk.saveCustomImage({ dataUrl: pickedImage.resultDataUrl, ...values });
     pickedImage = null;
+    builderName = "我的伙伴";
+    builderDescription = "";
     render();
     toast("桌宠已保存并启用");
+  }
+  if (target.id === "generateActionPack" && pickedImage) {
+    const values = builderValues();
+    actionGeneration = { running: true, progress: 4, message: "正在启动九动作生成流程" };
+    render();
+    navigate("pets");
+    try {
+      const result = await window.petdesk.generateActionPack({ sourcePath: pickedImage.path, ...values });
+      state = await window.petdesk.getState();
+      pickedImage = null;
+      builderName = "我的伙伴";
+      builderDescription = "";
+      actionGeneration = { running: false, progress: 100, message: `${result.name}的九动作已生成并启用` };
+      render();
+      navigate("pets");
+      toast("完整九动作已生成并启用");
+    } catch (error) {
+      actionGeneration = { running: false, progress: 0, message: error.message || "九动作生成失败" };
+      render();
+      navigate("pets");
+      toast(actionGeneration.message);
+    }
+  }
+  if (target.id === "saveAiConfig") await persistAiForm(false);
+  if (target.id === "testAiConfig") await persistAiForm(true);
+  if (target.id === "clearAiConfig") {
+    const result = await window.petdesk.clearAiConfig();
+    aiConfig = result.config;
+    if (result.cleared) {
+      aiStatus = "应用内 AI 配置已清除。";
+      toast("AI 配置已清除");
+    }
+    render();
+    navigate("settings");
   }
   if (target.id === "addTodo") {
     const title = $("#todoInput").value.trim();
@@ -644,6 +793,7 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", async (event) => {
   const target = event.target;
+  if (target.id === "subjectType") selectedSubjectType = target.value;
   if (target.dataset.alarmToggle !== undefined) {
     const itemId = target.closest("[data-id]").dataset.id;
     const next = clone(state);
@@ -680,6 +830,11 @@ document.addEventListener("change", async (event) => {
   }
 });
 
+document.addEventListener("input", (event) => {
+  if (event.target.id === "petNameInput") builderName = event.target.value;
+  if (event.target.id === "styleDescription") builderDescription = event.target.value;
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   if (event.target.id === "customFocusMinutes") {
@@ -705,9 +860,19 @@ $("#togglePet").addEventListener("click", async () => {
   toast(visible ? "桌宠已显示" : "桌宠已隐藏，可点击此按钮或托盘图标恢复");
 });
 window.petdesk.onState((next) => { state = next; render(); });
+window.petdesk.onActionPackProgress((next) => {
+  actionGeneration = {
+    running: !["complete", "error"].includes(next.stage),
+    progress: next.progress,
+    message: next.message,
+  };
+  render();
+  navigate("pets");
+});
 
-window.petdesk.getState().then((initial) => {
+Promise.all([window.petdesk.getState(), window.petdesk.getAiConfig()]).then(([initial, initialAiConfig]) => {
   state = initial;
+  aiConfig = initialAiConfig;
   const date = new Date();
   $("#eyebrow").textContent = date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }).toUpperCase();
   render();

@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "test": "node tests/state.test.js && node tests/actions.test.js && node tests/weather.test.js",
+    "test": "node tests/state.test.js && node tests/actions.test.js && node tests/weather.test.js && node tests/ai-config.test.js",
     "pack:win": "electron-builder --win nsis portable --publish never",
     "pack:dir": "electron-builder --dir"
   },
@@ -46,5 +46,8 @@
     "portable": {
       "artifactName": "${productName}-${version}-portable-${arch}.${ext}"
     }
+  },
+  "dependencies": {
+    "pngjs": "^7.0.0"
   }
 }

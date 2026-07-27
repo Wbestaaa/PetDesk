@@ -31,6 +31,8 @@ const lines = actionPatterns.ACTION_LINES;
 let activeActionPet;
 let activeManifest;
 let manifestRequest = 0;
+let customActionRequest = 0;
+let customActionSources = {};
 const poseForAction = {
   idle: "idle",
   blink: "idle",
@@ -86,12 +88,19 @@ function contextualLines(next) {
     context.push(`这次专注 ${Math.round(state.focus.duration / 60)} 分钟，我会安静陪你。`);
   }
   const personality = activeManifest?.speech?.[next] || [];
-  const generic = activeManifest?.character?.species === "human" ? [] : (lines[next] || []);
+  const customSpecies = activeManifest?.character?.species;
+  const generic = ["human", "unknown"].includes(customSpecies) ? [] : (lines[next] || []);
   return [...personality, ...generic, ...context];
 }
 
 function resolveActionSource(next) {
   if (!activeActionPet || !activeManifest) return null;
+  if (activeActionPet.isCustom) {
+    const directSource = customActionSources[next];
+    if (directSource) return directSource;
+    const fallbackName = activeManifest.fallbacks?.[next] || poseForAction[next] || "idle";
+    return customActionSources[fallbackName] || customActionSources.idle || null;
+  }
   const direct = activeManifest.actions?.[next];
   if (direct) return `../assets/pets/${activeActionPet.folder}/${direct}`;
   const fallbackName = activeManifest.fallbacks?.[next] || poseForAction[next] || "idle";
@@ -106,6 +115,8 @@ function displayActionArt(next) {
 
 async function loadActionManifest(definition) {
   const request = ++manifestRequest;
+  customActionRequest += 1;
+  customActionSources = {};
   activeManifest = null;
   try {
     const response = await fetch(`../assets/pets/${definition.folder}/manifest.json`);
@@ -123,6 +134,24 @@ async function loadActionManifest(definition) {
     displayActionArt(action);
   } catch (error) {
     console.error(`Unable to load ${definition.name} action manifest`, error);
+  }
+}
+
+async function loadCustomActionPack(definition, record) {
+  const request = ++customActionRequest;
+  manifestRequest += 1;
+  activeManifest = record.manifest || null;
+  customActionSources = {};
+  try {
+    const payload = await window.petdesk.getCustomPetActions(record.id);
+    if (request !== customActionRequest || state?.settings?.activePet !== record.id) return;
+    if (!payload?.manifest || !payload?.sources?.idle) throw new Error("动作素材不完整");
+    activeManifest = payload.manifest;
+    customActionSources = payload.sources;
+    actionPet.alt = record.name || "自定义桌宠";
+    displayActionArt(action);
+  } catch (error) {
+    console.error(`Unable to load ${definition.name} custom action pack`, error);
   }
 }
 
@@ -426,22 +455,35 @@ function frame(time) {
 function useState(next) {
   state = next;
   const selected = state.customPets?.find((item) => item.id === state.settings.activePet);
-  customDataUrl = selected?.dataUrl || "";
-  const nextActionPet = petCatalog.findBuiltInPet(state.settings.activePet);
-  const actionPetChanged = nextActionPet?.id !== activeActionPet?.id;
-  activeActionPet = nextActionPet?.kind === "action-art" ? nextActionPet : null;
+  const isCustomActionArt = selected?.kind === "action-art";
+  customDataUrl = selected && !isCustomActionArt ? selected.dataUrl || "" : "";
+  const builtIn = petCatalog.findBuiltInPet(state.settings.activePet);
+  const nextActionPet = isCustomActionArt
+    ? { id: selected.id, name: selected.name, kind: "action-art", isCustom: true }
+    : builtIn?.kind === "action-art"
+      ? builtIn
+      : null;
+  const actionPetChanged = nextActionPet?.id !== activeActionPet?.id
+    || Boolean(nextActionPet?.isCustom) !== Boolean(activeActionPet?.isCustom);
+  activeActionPet = nextActionPet;
   usesActionArt = Boolean(activeActionPet);
-  petMenuTitle.textContent = `和${state.settings.petName || activeActionPet?.name || "桌宠"}互动`;
+  petMenuTitle.textContent = `和${selected?.name || state.settings.petName || activeActionPet?.name || "桌宠"}互动`;
   customPet.src = customDataUrl;
+  if (isCustomActionArt && selected.dataUrl) actionPet.src = selected.dataUrl;
   customPet.style.display = customDataUrl ? "block" : "none";
   actionPet.style.display = usesActionArt ? "block" : "none";
   canvas.style.display = customDataUrl || usesActionArt ? "none" : "block";
   if (usesActionArt) {
-    if (actionPetChanged || !activeManifest) loadActionManifest(activeActionPet);
+    if (actionPetChanged || !activeManifest) {
+      if (activeActionPet.isCustom) loadCustomActionPack(activeActionPet, selected);
+      else loadActionManifest(activeActionPet);
+    }
     else displayActionArt(action);
   } else {
     activeManifest = null;
     manifestRequest += 1;
+    customActionRequest += 1;
+    customActionSources = {};
   }
 }
 

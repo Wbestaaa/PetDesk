@@ -8,6 +8,8 @@ const {
   dialog,
   Notification,
   screen,
+  safeStorage,
+  shell,
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -19,14 +21,30 @@ const {
   nextDueAlarm,
 } = require("./src/state");
 const { normalizeLocation, parseForecast } = require("./src/weather");
+const {
+  ACTION_PACK_ACTIONS,
+  DEFAULT_AI_CONFIG,
+  actionGridRects,
+  buildActionPackPrompt,
+  buildApiUrl,
+  buildPreviewPrompt,
+  normalizeAiBaseUrl,
+  normalizeAiModel,
+  publicAiConfig,
+  removeConnectedBackground,
+} = require("./src/ai-config");
 
 let petWindow;
 let panelWindow;
 let tray;
 let appState;
 let statePath;
+let aiConfigPath;
+let storedAiConfig = {};
 let scheduler;
 const rewardCooldowns = new Map();
+const approvedImagePaths = new Set();
+let actionPackGenerationBusy = false;
 
 const REWARD_COOLDOWN_MS = Object.freeze({
   pet: 1800,
@@ -45,6 +63,59 @@ let roamTimer;
 
 const isDev = process.argv.includes("--dev");
 const launchHidden = process.argv.includes("--hidden");
+
+function loadAiConfig() {
+  aiConfigPath = path.join(app.getPath("userData"), "petdesk-ai-config.json");
+  try {
+    const parsed = JSON.parse(fs.readFileSync(aiConfigPath, "utf8"));
+    storedAiConfig = parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    storedAiConfig = {};
+  }
+}
+
+function persistAiConfig() {
+  fs.mkdirSync(path.dirname(aiConfigPath), { recursive: true });
+  const temporaryPath = `${aiConfigPath}.tmp`;
+  fs.writeFileSync(temporaryPath, JSON.stringify(storedAiConfig, null, 2), "utf8");
+  fs.renameSync(temporaryPath, aiConfigPath);
+}
+
+async function encryptApiKey(apiKey) {
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error("系统安全存储暂不可用，无法安全保存 API Key");
+  }
+  return (await safeStorage.encryptStringAsync(apiKey)).toString("base64");
+}
+
+async function decryptApiKey(encryptedApiKey) {
+  if (!encryptedApiKey) return "";
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) {
+    throw new Error("系统安全存储暂不可用，无法读取已保存的 API Key");
+  }
+  const result = await safeStorage.decryptStringAsync(Buffer.from(encryptedApiKey, "base64"));
+  if (result.shouldReEncrypt) {
+    storedAiConfig.encryptedApiKey = await encryptApiKey(result.result);
+    persistAiConfig();
+  }
+  return result.result;
+}
+
+async function getResolvedAiConfig() {
+  const baseUrl = normalizeAiBaseUrl(storedAiConfig.baseUrl || DEFAULT_AI_CONFIG.baseUrl);
+  const model = normalizeAiModel(storedAiConfig.model || DEFAULT_AI_CONFIG.model);
+  const apiKey = storedAiConfig.encryptedApiKey
+    ? await decryptApiKey(storedAiConfig.encryptedApiKey)
+    : String(process.env.OPENAI_API_KEY || "").trim();
+  return { baseUrl, model, apiKey };
+}
+
+function getPublicAiConfig() {
+  return {
+    ...publicAiConfig(storedAiConfig, process.env.OPENAI_API_KEY),
+    storageProtected: Boolean(storedAiConfig.encryptedApiKey),
+  };
+}
 
 function loadState() {
   statePath = path.join(app.getPath("userData"), "petdesk-state.json");
@@ -396,6 +467,234 @@ async function loadWeather(query) {
   return forecast;
 }
 
+async function fetchApi(url, options = {}, timeoutMs = 180_000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("AI 服务响应超时，请检查网络或稍后重试");
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function responsePayload(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: { message: text.slice(0, 300) || `HTTP ${response.status}` } };
+  }
+}
+
+function aiErrorMessage(response, payload) {
+  const detail = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+  if (response.status === 401 || response.status === 403) return `API Key 无效或没有图片权限：${detail}`;
+  if (response.status === 404) return `API URL 或模型不受支持：${detail}`;
+  if (response.status === 429) return `AI 服务额度或频率已达上限：${detail}`;
+  return `AI 图片生成失败：${detail}`;
+}
+
+function sourceMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  return {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+  }[extension] || "application/octet-stream";
+}
+
+function assertApprovedImagePath(sourcePath) {
+  const resolved = path.resolve(String(sourcePath || ""));
+  if (!approvedImagePaths.has(resolved) || !fs.existsSync(resolved)) {
+    throw new Error("请重新通过“选择图片”按钮载入原图");
+  }
+  return resolved;
+}
+
+async function requestAiImage({ sourcePath, prompt }) {
+  const config = await getResolvedAiConfig();
+  if (!config.apiKey) throw new Error("请先在“设置 → AI 图片服务”中填写并保存 API Key");
+  const body = new FormData();
+  body.set("model", config.model);
+  body.set("prompt", prompt);
+  body.set("size", "1024x1024");
+  body.set(
+    "image",
+    new Blob([fs.readFileSync(sourcePath)], { type: sourceMimeType(sourcePath) }),
+    path.basename(sourcePath)
+  );
+  const response = await fetchApi(buildApiUrl(config.baseUrl, "images/edits"), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    body,
+  });
+  const payload = await responsePayload(response);
+  if (!response.ok) throw new Error(aiErrorMessage(response, payload));
+  const result = payload.data?.[0];
+  if (result?.b64_json) return Buffer.from(result.b64_json, "base64");
+  if (result?.url) {
+    const imageUrl = new URL(result.url);
+    if (imageUrl.protocol !== "https:") throw new Error("AI 服务返回了不安全的图片地址");
+    const imageResponse = await fetchApi(imageUrl, {}, 60_000);
+    if (!imageResponse.ok) throw new Error(`无法下载 AI 图片结果 (${imageResponse.status})`);
+    return Buffer.from(await imageResponse.arrayBuffer());
+  }
+  throw new Error("AI 图片结果为空");
+}
+
+function emitActionPackProgress(stage, progress, message) {
+  if (panelWindow && !panelWindow.isDestroyed()) {
+    panelWindow.webContents.send("image:action-pack-progress", { stage, progress, message });
+  }
+}
+
+function customActionManifest({ id, name, subjectType }) {
+  const actions = Object.fromEntries(ACTION_PACK_ACTIONS.map((action) => [action, `actions/${action}.png`]));
+  return {
+    schemaVersion: 1,
+    id,
+    name,
+    kind: "custom-action-art",
+    character: { species: subjectType === "human" ? "human" : subjectType === "animal" ? "animal" : "unknown" },
+    actions,
+    fallbacks: {
+      blink: "idle",
+      run: "walk",
+      jump: "celebrate",
+      feed: "play",
+      drink: "play",
+      write: "study",
+      type: "study",
+      nap: "sleep",
+      yawn: "sleep",
+      dance: "celebrate",
+      happy: "celebrate",
+      alarm: "alert",
+      surprised: "alert",
+    },
+    speech: {
+      idle: ["我已经准备好陪你啦。", "先完成最小的一步，我们慢慢来。"],
+      pet: ["收到你的摸摸，今天也一起加油。", "谢谢你，我会好好陪着你的。"],
+      walk: ["换个位置，也换换心情。"],
+      stretch: ["一起伸个懒腰，放松一下肩膀。"],
+      play: ["短暂玩一会儿，再继续前进。"],
+      study: ["我会安静陪你完成这一小段。"],
+      sleep: ["先休息一下，补充能量。"],
+      celebrate: ["完成啦，这一步值得庆祝！"],
+      alert: ["时间到啦，来看看你的提醒。"],
+    },
+  };
+}
+
+function customPetDataUrl(filePath) {
+  return `data:image/png;base64,${fs.readFileSync(filePath).toString("base64")}`;
+}
+
+async function createActionPack({ sourcePath, name, style, description, subjectType }) {
+  const safeSourcePath = assertApprovedImagePath(sourcePath);
+  if (actionPackGenerationBusy) throw new Error("已有一套动作正在生成，请等待完成");
+  actionPackGenerationBusy = true;
+  const petName = String(name || "我的伙伴").trim().slice(0, 20) || "我的伙伴";
+  const id = `pet-${Date.now()}`;
+  const folderPath = path.join(app.getPath("userData"), "pets", id);
+  try {
+    emitActionPackProgress("prepare", 8, "正在整理角色特征与九个动作");
+    const prompt = buildActionPackPrompt({ name: petName, style, description, subjectType });
+    emitActionPackProgress("generate", 18, "AI 正在绘制统一角色动作表");
+    const sheetBuffer = await requestAiImage({ sourcePath: safeSourcePath, prompt });
+    const sheet = nativeImage.createFromBuffer(sheetBuffer);
+    if (sheet.isEmpty()) throw new Error("AI 返回的图片无法读取");
+    const size = sheet.getSize();
+    if (size.width < 600 || size.height < 600) throw new Error("AI 返回的动作表分辨率过低");
+
+    const actionsFolder = path.join(folderPath, "actions");
+    fs.mkdirSync(actionsFolder, { recursive: true });
+    const rects = actionGridRects(size.width, size.height);
+    for (let index = 0; index < rects.length; index += 1) {
+      const { action, x, y, width, height } = rects[index];
+      emitActionPackProgress(
+        "process",
+        44 + Math.round((index / rects.length) * 40),
+        `正在切分并透明化：${action}（${index + 1}/9）`
+      );
+      const tile = sheet.crop({ x, y, width, height }).resize({ width: 512, height: 512, quality: "best" });
+      if (tile.isEmpty()) throw new Error(`动作 ${action} 切分失败`);
+      const cleaned = removeConnectedBackground(tile.toPNG());
+      fs.writeFileSync(path.join(actionsFolder, `${action}.png`), cleaned);
+    }
+    const manifest = customActionManifest({ id, name: petName, subjectType });
+    fs.writeFileSync(path.join(folderPath, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+    const idlePath = path.join(actionsFolder, "idle.png");
+    const record = {
+      id,
+      name: petName,
+      style,
+      subjectType,
+      kind: "action-art",
+      folderPath,
+      imagePath: idlePath,
+      dataUrl: customPetDataUrl(idlePath),
+      manifest,
+    };
+    emitActionPackProgress("save", 92, "正在保存九动作并接入桌宠系统");
+    updateState((next) => {
+      next.customPets.push(record);
+      next.settings.activePet = id;
+      next.settings.petName = petName;
+      next.settings.petType = subjectType === "human" ? "human" : "custom";
+      return next;
+    });
+    emitActionPackProgress("complete", 100, "九动作桌宠已生成并启用");
+    return { id, name: petName, actions: ACTION_PACK_ACTIONS };
+  } catch (error) {
+    if (fs.existsSync(folderPath)) fs.rmSync(folderPath, { recursive: true, force: true });
+    emitActionPackProgress("error", 0, error.message || "九动作生成失败");
+    throw error;
+  } finally {
+    actionPackGenerationBusy = false;
+  }
+}
+
+async function deleteCustomPet(id) {
+  const record = appState.customPets.find((pet) => pet.id === id);
+  if (!record) throw new Error("没有找到这个自定义桌宠");
+  const response = panelWindow && !panelWindow.isDestroyed()
+    ? await dialog.showMessageBox(panelWindow, {
+      type: "warning",
+      title: "删除自定义桌宠",
+      message: `确定删除“${record.name || "我的桌宠"}”吗？`,
+      detail: "图片与动作素材会移入 Windows 回收站，之后仍可恢复。",
+      buttons: ["取消", "移入回收站"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    : { response: 0 };
+  if (response.response !== 1) return { deleted: false };
+
+  const petsRoot = path.resolve(app.getPath("userData"), "pets");
+  const target = path.resolve(record.folderPath || record.imagePath || "");
+  if (!target.startsWith(`${petsRoot}${path.sep}`) || target === petsRoot) {
+    throw new Error("自定义桌宠文件位置异常，已停止删除");
+  }
+  if (fs.existsSync(target)) await shell.trashItem(target);
+  const wasActive = appState.settings.activePet === id;
+  updateState((next) => {
+    next.customPets = next.customPets.filter((pet) => pet.id !== id);
+    if (wasActive) {
+      next.settings.activePet = "momo";
+      next.settings.petType = "cat";
+      next.settings.petName = "桃桃";
+    }
+    return next;
+  });
+  return { deleted: true, activePet: appState.settings.activePet };
+}
+
 function registerIpc() {
   ipcMain.handle("state:get", () => appState);
   ipcMain.handle("state:replace", (_, state) => updateState(state));
@@ -461,7 +760,11 @@ function registerIpc() {
       filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
-    const filePath = result.filePaths[0];
+    const filePath = path.resolve(result.filePaths[0]);
+    if (fs.statSync(filePath).size > 20 * 1024 * 1024) {
+      throw new Error("图片不能超过 20 MB，请压缩后重试");
+    }
+    approvedImagePaths.add(filePath);
     const ext = path.extname(filePath).slice(1).replace("jpg", "jpeg");
     return {
       name: path.basename(filePath),
@@ -469,44 +772,97 @@ function registerIpc() {
       dataUrl: `data:image/${ext};base64,${fs.readFileSync(filePath).toString("base64")}`,
     };
   });
-  ipcMain.handle("image:save-custom", (_, { dataUrl, name, style }) => {
+  ipcMain.handle("image:save-custom", (_, { dataUrl, name, style, subjectType }) => {
     const matches = /^data:image\/png;base64,(.+)$/.exec(dataUrl);
     if (!matches) throw new Error("仅支持 PNG 数据");
     const folder = path.join(app.getPath("userData"), "pets");
     fs.mkdirSync(folder, { recursive: true });
     const id = `pet-${Date.now()}`;
     const filePath = path.join(folder, `${id}.png`);
+    const petName = String(name || "我的桌宠").trim().slice(0, 20) || "我的桌宠";
     fs.writeFileSync(filePath, Buffer.from(matches[1], "base64"));
     updateState((state) => {
-      state.customPets.push({ id, name: name || "我的桌宠", style, imagePath: filePath, dataUrl });
+      state.customPets.push({
+        id,
+        name: petName,
+        style,
+        subjectType,
+        kind: "single-image",
+        imagePath: filePath,
+        dataUrl,
+      });
       state.settings.activePet = id;
+      state.settings.petName = petName;
+      state.settings.petType = subjectType === "human" ? "human" : "custom";
       return state;
     });
     return { id, filePath };
   });
-  ipcMain.handle("image:ai-transform", async (_, { sourcePath, style, description }) => {
-    const key = process.env.OPENAI_API_KEY;
-    if (!key) throw new Error("未检测到 OPENAI_API_KEY。请先在 Windows 环境变量中配置后重启 PetDesk。");
-    const prompts = {
-      chibi: "Cartoonize the subject as a polished cute chibi desktop-pet illustration with a large expressive head, compact body, clean silhouette and plain neutral background. Preserve the subject's identity, species, facial features, hair, clothing and key accessories. A human subject must remain unmistakably human with human anatomy and no animal ears, paws, tail, muzzle or fur.",
-      realistic: "Transform the subject into a charming realistic desktop-pet portrait, preserving identity and key markings, centered with a clean plain background.",
-      watercolor: "Transform the subject into a soft hand-painted watercolor desktop-pet illustration, clean silhouette, centered, plain background.",
-    };
-    const body = new FormData();
-    body.set("model", "gpt-image-1.5");
-    body.set("prompt", `${prompts[style] || prompts.chibi} ${description || ""}`.trim());
-    body.set("size", "1024x1024");
-    body.set("image", new Blob([fs.readFileSync(sourcePath)]), path.basename(sourcePath));
-    const response = await fetch("https://api.openai.com/v1/images/edits", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}` },
-      body,
+  ipcMain.handle("image:ai-transform", async (_, { sourcePath, style, description, subjectType }) => {
+    const safeSourcePath = assertApprovedImagePath(sourcePath);
+    const buffer = await requestAiImage({
+      sourcePath: safeSourcePath,
+      prompt: buildPreviewPrompt({ style, description, subjectType }),
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.error?.message || "AI 图片转换失败");
-    const base64 = payload.data?.[0]?.b64_json;
-    if (!base64) throw new Error("AI 图片结果为空");
-    return `data:image/png;base64,${base64}`;
+    return `data:image/png;base64,${buffer.toString("base64")}`;
+  });
+  ipcMain.handle("image:generate-action-pack", (_, payload) => createActionPack(payload || {}));
+  ipcMain.handle("image:delete-custom", (_, id) => deleteCustomPet(String(id || "")));
+  ipcMain.handle("image:get-custom-actions", (_, id) => {
+    const record = appState.customPets.find((pet) => pet.id === id && pet.kind === "action-art");
+    if (!record?.folderPath || !record.manifest?.actions) return null;
+    const folder = path.resolve(record.folderPath);
+    const sources = {};
+    for (const [action, relative] of Object.entries(record.manifest.actions)) {
+      const filePath = path.resolve(folder, relative);
+      if (!filePath.startsWith(`${folder}${path.sep}`) || !fs.existsSync(filePath)) continue;
+      sources[action] = customPetDataUrl(filePath);
+    }
+    return { manifest: record.manifest, sources };
+  });
+  ipcMain.handle("ai:get-config", () => getPublicAiConfig());
+  ipcMain.handle("ai:save-config", async (_, input = {}) => {
+    const baseUrl = normalizeAiBaseUrl(input.baseUrl);
+    const model = normalizeAiModel(input.model);
+    const apiKey = String(input.apiKey || "").trim();
+    const next = {
+      version: 1,
+      baseUrl,
+      model,
+      encryptedApiKey: storedAiConfig.encryptedApiKey || "",
+    };
+    if (apiKey) next.encryptedApiKey = await encryptApiKey(apiKey);
+    storedAiConfig = next;
+    persistAiConfig();
+    return getPublicAiConfig();
+  });
+  ipcMain.handle("ai:test-config", async () => {
+    const config = await getResolvedAiConfig();
+    if (!config.apiKey) throw new Error("请先填写并保存 API Key");
+    const response = await fetchApi(buildApiUrl(config.baseUrl, "models"), {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    }, 20_000);
+    const payload = await responsePayload(response);
+    if (!response.ok) throw new Error(aiErrorMessage(response, payload));
+    return { ok: true, message: `连接成功 · ${config.model}` };
+  });
+  ipcMain.handle("ai:clear-config", async () => {
+    const response = panelWindow && !panelWindow.isDestroyed()
+      ? await dialog.showMessageBox(panelWindow, {
+        type: "question",
+        title: "清除 AI 图片服务配置",
+        message: "确定清除应用内保存的 API URL、模型和 API Key 吗？",
+        detail: "这不会删除已经生成的桌宠素材。",
+        buttons: ["取消", "清除配置"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      : { response: 0 };
+    if (response.response !== 1) return { cleared: false, config: getPublicAiConfig() };
+    storedAiConfig = {};
+    if (aiConfigPath && fs.existsSync(aiConfigPath)) fs.unlinkSync(aiConfigPath);
+    return { cleared: true, config: getPublicAiConfig() };
   });
   ipcMain.handle("settings:startup", (_, enabled) => {
     app.setLoginItemSettings({ openAtLogin: Boolean(enabled), args: ["--hidden"] });
@@ -517,6 +873,7 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   loadState();
+  loadAiConfig();
   registerIpc();
   createPetWindow();
   if (!launchHidden) createPanelWindow();

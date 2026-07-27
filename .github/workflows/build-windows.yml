@@ -3,11 +3,10 @@ name: Windows Build
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
   contents: write
@@ -47,11 +46,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Attach binaries to GitHub Release
-        if: github.event_name == 'release'
+      - name: Publish tagged GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $files = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -ExpandProperty FullName
-          gh release upload "${{ github.event.release.tag_name }}" $files --clobber
+          gh release view "${{ github.ref_name }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "${{ github.ref_name }}" $files --clobber
+          } else {
+            gh release create "${{ github.ref_name }}" $files --verify-tag --generate-notes --title "PetDesk ${{ github.ref_name }}"
+          }

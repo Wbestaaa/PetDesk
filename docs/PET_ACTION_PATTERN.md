@@ -1,6 +1,6 @@
 # PetDesk 标准动作模式 v1
 
-这份规范让内置绘制宠物、单张图片宠物和未来的 Sprite Sheet 角色包使用同一套动作指令。运行时代码位于 `src/pet-actions.js`，此文档说明角色素材如何与它对接。
+这份规范让内置绘制宠物、单张图片宠物、AI 生成九动作包和未来的 Sprite Sheet 角色包使用同一套动作指令。运行时代码位于 `src/pet-actions.js`，此文档说明角色素材如何与它对接。
 
 ## 九类动作
 
@@ -81,6 +81,35 @@ my-pet/
 ```
 
 运行时会读取当前角色的 `manifest.json`，预载动作素材，优先使用角色专属回复，再补充通用及时间、待办、天气等情境回复。当前版本也让单张自定义图片读取动作模式的分类、默认时长和动画类；Sprite Sheet 导入器可在后续版本按照此规范扩展，而无需更改专注、提醒、互动等业务指令。
+
+## AI 九动作包
+
+桌宠工坊会让图片编辑模型一次生成 3×3 动作表，固定顺序为：
+
+```text
+idle       walk        pet
+stretch    play        study
+sleep      celebrate   alert
+```
+
+主进程随后把动作表切成九张 PNG、从图像边界连通区域中移除纯色背景，并保存为：
+
+```text
+userData/pets/<pet-id>/
+├─ manifest.json
+└─ actions/
+   ├─ idle.png
+   ├─ walk.png
+   ├─ pet.png
+   ├─ stretch.png
+   ├─ play.png
+   ├─ study.png
+   ├─ sleep.png
+   ├─ celebrate.png
+   └─ alert.png
+```
+
+自定义动作包不会把九张图片全部写进普通状态文件；渲染进程只通过受限 IPC 按当前角色读取素材。删除动作包时，整个 `<pet-id>` 文件夹会先移入系统回收站。
 
 ## 正反馈触发原则
 
